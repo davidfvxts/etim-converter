@@ -55,10 +55,28 @@ python -m etim review out/demo             # Review-Tabelle (CSV) für Artikel u
       gitignored, kam also weder über Git noch über das ZIP mit; `scripts/download_etim.sh` scheitert,
       weil `etim-international.com` nicht in der Netzwerk-Allowlist der Remote-Umgebung steht).
       Spaltennamen des echten Release sind damit **noch nicht bestätigt**.
-- [~] `load-model` lädt die CSV korrekt nach SQLite (mit `--no-embed` grün). Der Embedding-Schritt
-      braucht `GEMINI_API_KEY` — in dieser Session nicht gesetzt.
+- [x] `load-model` durchgelaufen: CSV → SQLite und echte Embeddings über `gemini-embedding-001`
+      (6 Klassen × 3072 Dimensionen im Cache).
+- [x] Echter Lauf ohne `ETIM_DRY_RUN` gegen `tests/fixtures/katalog_mini.csv`: alle 4 Artikel korrekt
+      klassifiziert (inkl. Zubehör-Abgrenzung EC000006 statt EC000001), Merkmale mit Quellzitat,
+      BMEcat erzeugt, `validate` ohne Fehler.
 - [ ] Erster echter Katalog (20 Seiten) durch `run` → Trefferquote der Klassen manuell geprüft
-- [ ] Echter Lauf ohne `ETIM_DRY_RUN` — blockiert durch fehlenden `GEMINI_API_KEY` in der Remote-Umgebung
+- [ ] **Review-Regel-Lücke (Geschäftsentscheidung für David):** `needs_review` prüft nur *gefüllte*
+      Werte unter der Schwelle. Ein Artikel, bei dem *kein einziges* Merkmal befüllt wurde, gilt
+      als freigabefähig und wird exportiert — im Testlauf mit gemini-3.5-flash traf das GE-RS-20.
+      `validate` warnt zwar ("ETIM-Klasse ohne Merkmale"), aber die Warnung blockiert nichts.
+      Soll ein Artikel ohne Merkmale automatisch in die Review-Queue?
+- [ ] **Konfidenz ist schwach als Signal.** Die Modelle melden fast durchgehend 0.90–1.00 selbst
+      bei strittigen Fällen; die Schwelle 0.75 greift auf Klassenebene praktisch nie. Belastbarer
+      wäre ein Counter-Check mit einem zweiten, unabhängigen Modell — Uneinigkeit als Review-Signal
+      (CLAUDE.md budgetiert dafür bereits den dritten LLM-Call pro Artikel).
+- [ ] **Modellwahl gegen echte ETIM-Daten messen.** Bei 6 Fixture-Klassen ist Top-20 die ganze
+      Liste — Retrieval wird nicht geprüft. Erst bei ~5.500 Klassen entscheidet sich, ob
+      `gemini-3.5-flash-lite` (5x schneller, keine Thinking-Tokens) reicht oder ob es 3.8-flash
+      braucht. Ebenso `gemini-embedding-2` gegen `gemini-embedding-001` vergleichen.
+- [ ] **Durchsatz:** ~25 s/Artikel seriell. Bei 5.000 Artikeln sind das ~35 h. Für Vollkataloge
+      Gemini Batch API (50 % Rabatt, 24-h-Ziel) oder Parallelisierung vorsehen. Ausserdem fehlt
+      Checkpointing: bricht ein Lauf spät ab, ist alles verloren.
 - [ ] BMEcat-XSD aus der ETIM-Guideline-ZIP nach `data/schema/` → `validate` mit XSD
 - [ ] Review-UI (später; erst wenn ein Kunde zahlt)
 
