@@ -50,22 +50,43 @@ python -m etim review out/demo             # Review-Tabelle (CSV) für Artikel u
 
 ## Stand / Nächste Schritte (aktualisiere diesen Block nach jeder Session)
 
-- [~] `inspect` läuft; gegen die Mini-Fixture werden alle 8 Tabellen erkannt, Aliase passen.
-      **Offen:** der echte ETIM-10.0-CSV-Release lag in dieser Session nicht vor (`data/etim/` ist
-      gitignored, kam also weder über Git noch über das ZIP mit; `scripts/download_etim.sh` scheitert,
-      weil `etim-international.com` nicht in der Netzwerk-Allowlist der Remote-Umgebung steht).
-      Spaltennamen des echten Release sind damit **noch nicht bestätigt**.
-- [x] `load-model` durchgelaufen: CSV → SQLite und echte Embeddings über `gemini-embedding-001`
-      (6 Klassen × 3072 Dimensionen im Cache).
-- [x] Echter Lauf ohne `ETIM_DRY_RUN` gegen `tests/fixtures/katalog_mini.csv`: alle 4 Artikel korrekt
-      klassifiziert (inkl. Zubehör-Abgrenzung EC000006 statt EC000001), Merkmale mit Quellzitat,
-      BMEcat erzeugt, `validate` ohne Fehler.
+- [ ] **BLOCKER: echte ETIM-Daten fehlen weiterhin.** `scripts/download_etim.sh` scheitert in der
+      Remote-Umgebung an der Egress-Policy, nicht am Server: `curl -sS "$HTTPS_PROXY/__agentproxy/status"`
+      meldet für alle fünf Dateien `connect_rejected` / "gateway answered 403 to CONNECT
+      (policy denial)". Der TLS-Tunnel kommt also gar nicht erst zustande — die Domain
+      `www.etim-international.com` steht nach wie vor nicht in der Allowlist (auch nicht ohne
+      `www.`). Die Proxy-Doku (`/root/.ccr/README.md`) verbietet ausdrücklich, das zu umgehen.
+      **Nächster Schritt für David:** entweder die Domain in der Environment-Allowlist freischalten
+      (Session-Environment-Einstellungen) oder die ZIPs manuell nach `data/downloads/` legen —
+      `etim10-csv.zip` und `bmecat-guideline.zip` reichen; das Skript entpackt vorhandene ZIPs
+      auch ohne Download.
+      **Solange dieser Punkt offen ist, sind die vier folgenden Punkte technisch nicht bearbeitbar.**
+- [ ] Spaltennamen des echten Release bestätigen (`inspect`): `TABLE_ALIASES`/`COLUMN_ALIASES` in
+      `etim/model.py` sind bis heute nur gegen die handgebaute 6-Klassen-Fixture geprüft.
+- [ ] `load-model` gegen den echten Release (~5.500 Klassen statt 6). Achtung: ~5.500 Embedding-Calls,
+      auf dem Free Tier vermutlich nicht durchführbar.
+- [ ] **Retrieval messen (wichtigste offene Frage).** Bei 6 Fixture-Klassen ist Top-20 die ganze
+      Liste, Retrieval wird also nie geprüft. Bei ~5.500 Klassen entscheidet sich hier alles:
+      landet die richtige Klasse nicht in den Top-20, kann kein nachgelagertes Modell das
+      reparieren. Geplant: 4 Fixture-Artikel + 10–15 realistische SHK-/Elektro-Artikel,
+      Recall@5/@20, `gemini-embedding-001` gegen `gemini-embedding-2`.
+- [ ] Modellwahl gegen echte Daten: `gemini-3.5-flash-lite` gegen `gemini-3.8-flash` auf denselben
+      Artikeln (Trefferquote, Laufzeit, Kosten je Artikel). Gegen die Fixture waren alle Modelle
+      ununterscheidbar; die Guardrails in `features.py` (EV-Code-Whitelist, Quellzitat-Pflicht)
+      tragen mehr als die Modellwahl.
+- [ ] BMEcat-XSD aus der Guideline-ZIP nach `data/schema/` → `validate` mit echter XSD-Prüfung
+      statt nur Strukturregeln. Hängt am selben Download.
+- [x] **Review-Lücke geschlossen** (Geschäftsentscheidung von David, 4.9.2026: Abdeckungsschwelle).
+      `ETIM_MIN_COVERAGE` (Default 0.30): ein Artikel geht in die Review-Queue, wenn weniger als
+      30 % seiner Klassen-Merkmale befüllt sind — das fängt den 0-Merkmale-Fall (GE-RS-20) und
+      fast leere Artikel ab, die beim Großhändler-Datencheck ohnehin durchfallen. `EnrichedProduct`
+      hat jetzt `coverage`; `report.md` nennt den Grund, `review.csv` bekommt eine `ABDECKUNG`-Zeile,
+      der Standard-Export lässt solche Artikel weg. `0` schaltet die Prüfung ab.
+- [x] `load-model` (Fixture): CSV → SQLite und echte Embeddings über `gemini-embedding-001`.
+- [x] Echter Lauf ohne `ETIM_DRY_RUN` gegen `tests/fixtures/katalog_mini.csv`: 4/4 korrekt
+      klassifiziert (inkl. Zubehör-Abgrenzung EC000006 statt EC000001), BMEcat erzeugt,
+      `validate` ohne Fehler.
 - [ ] Erster echter Katalog (20 Seiten) durch `run` → Trefferquote der Klassen manuell geprüft
-- [ ] **Review-Regel-Lücke (Geschäftsentscheidung für David):** `needs_review` prüft nur *gefüllte*
-      Werte unter der Schwelle. Ein Artikel, bei dem *kein einziges* Merkmal befüllt wurde, gilt
-      als freigabefähig und wird exportiert — im Testlauf mit gemini-3.5-flash traf das GE-RS-20.
-      `validate` warnt zwar ("ETIM-Klasse ohne Merkmale"), aber die Warnung blockiert nichts.
-      Soll ein Artikel ohne Merkmale automatisch in die Review-Queue?
 - [ ] **Konfidenz ist schwach als Signal.** Die Modelle melden fast durchgehend 0.90–1.00 selbst
       bei strittigen Fällen; die Schwelle 0.75 greift auf Klassenebene praktisch nie. Belastbarer
       wäre ein Counter-Check mit einem zweiten, unabhängigen Modell — Uneinigkeit als Review-Signal
@@ -76,16 +97,9 @@ python -m etim review out/demo             # Review-Tabelle (CSV) für Artikel u
       Ein Kundenkatalog mit 200–5.000 Artikeln braucht 400–10.000 Calls — auf dem Free Tier
       unmöglich, unabhängig vom Modell. Der reine Token-Preis wäre mit 20–40 $ je
       Vollkatalog (Batch-API: die Hälfte) nicht das Problem.
-- [ ] **Modellwahl gegen echte ETIM-Daten messen.** Bei 6 Fixture-Klassen ist Top-20 die ganze
-      Liste — Retrieval wird nicht geprüft. Alle getesteten Modelle (3.1-flash-lite bis
-      3.8-flash) lösen die Fixture-Fälle gleich gut; die Guardrails in `features.py`
-      (EV-Code-Whitelist, Quellzitat-Pflicht) tragen mehr als die Modellwahl. Erst bei
-      ~5.500 Klassen entscheidet sich, ob `gemini-3.5-flash-lite` reicht oder es
-      `gemini-3.8-flash` braucht. Ebenso `gemini-embedding-2` gegen `gemini-embedding-001`.
 - [ ] **Durchsatz:** ~25 s/Artikel seriell. Bei 5.000 Artikeln sind das ~35 h. Für Vollkataloge
       Gemini Batch API (50 % Rabatt, 24-h-Ziel) oder Parallelisierung vorsehen. Ausserdem fehlt
       Checkpointing: bricht ein Lauf spät ab, ist alles verloren.
-- [ ] BMEcat-XSD aus der ETIM-Guideline-ZIP nach `data/schema/` → `validate` mit XSD
 - [ ] Review-UI (später; erst wenn ein Kunde zahlt)
 
 ## Dateien

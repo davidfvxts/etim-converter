@@ -15,6 +15,9 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 GEMINI_EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", "gemini-embedding-001")
 ETIM_VERSION = os.getenv("ETIM_VERSION", "ETIM-10.0")
 REVIEW_THRESHOLD = float(os.getenv("ETIM_REVIEW_THRESHOLD", "0.75"))
+# Mindestanteil befüllter Merkmale, damit ein Artikel ohne Review exportiert wird.
+# 0 schaltet die Prüfung ab.
+MIN_COVERAGE = float(os.getenv("ETIM_MIN_COVERAGE", "0.30"))
 DRY_RUN = os.getenv("ETIM_DRY_RUN", "0") == "1"
 
 PAGES_PER_CHUNK = int(os.getenv("ETIM_PAGES_PER_CHUNK", "6"))

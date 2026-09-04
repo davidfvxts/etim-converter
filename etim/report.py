@@ -14,6 +14,11 @@ from . import config
 from .schemas import EnrichedProduct
 
 
+def _thin(e: EnrichedProduct) -> bool:
+    """Artikel mit zu geringer Merkmalsabdeckung (gleiche Regel wie in features.py)."""
+    return bool(e.class_id) and bool(e.features) and config.MIN_COVERAGE > 0 and e.coverage < config.MIN_COVERAGE
+
+
 def run(out_dir: Path, supplier_name: str = "") -> Path:
     items = [EnrichedProduct.model_validate(x) for x in json.loads((out_dir / "enriched.json").read_text())]
     val = {}
@@ -44,6 +49,7 @@ def run(out_dir: Path, supplier_name: str = "") -> Path:
         f"- Mit ETIM-Klasse: **{len(classified)}** ({len(classified) / n:.0%})" if n else "- keine Artikel",
         f"- Davon ohne Rückfrage freigabefähig: **{n - len(review)}**; zur Prüfung: **{len(review)}**",
         f"- Merkmale: {filled} von {total_feats} befüllt ({filled / total_feats:.0%}), davon {high} mit hoher Sicherheit" if total_feats else "- keine Merkmale",
+        f"- Artikel unter der Mindestabdeckung von {config.MIN_COVERAGE:.0%}: **{sum(1 for e in classified if _thin(e))}**" if config.MIN_COVERAGE > 0 else "- Mindestabdeckung abgeschaltet",
     ]
     if val:
         n_err = sum(i["level"] == "error" for i in val.get("issues", []))
@@ -56,7 +62,14 @@ def run(out_dir: Path, supplier_name: str = "") -> Path:
         lines.append(f"| {fid} | {fdesc} | {c} |")
     lines += ["", "## Artikel zur Prüfung", "", "| Artikel-Nr. | Bezeichnung | Klasse | Konfidenz | Grund |", "|---|---|---|---|---|"]
     for e in review[:200]:
-        reason = "keine Klasse" if not e.class_id else ("Klasse unsicher" if e.class_confidence < config.REVIEW_THRESHOLD else "Merkmale unsicher")
+        if not e.class_id:
+            reason = "keine Klasse"
+        elif e.class_confidence < config.REVIEW_THRESHOLD:
+            reason = "Klasse unsicher"
+        elif _thin(e):
+            reason = f"nur {e.coverage:.0%} der Merkmale befüllt"
+        else:
+            reason = "Merkmale unsicher"
         lines.append(f"| {e.product.supplier_pid} | {e.product.name[:50]} | {e.class_id or '—'} | {e.class_confidence:.0%} | {reason} |")
     if len(review) > 200:
         lines.append(f"| … | +{len(review) - 200} weitere | | | |")
@@ -70,6 +83,8 @@ def run(out_dir: Path, supplier_name: str = "") -> Path:
         for e in items:
             if not e.class_id or e.class_confidence < config.REVIEW_THRESHOLD:
                 w.writerow([e.product.supplier_pid, e.product.name, e.product.page, e.class_id, e.class_desc, f"{e.class_confidence:.2f}", "", "KLASSE", "", "", "", "", "", ""])
+            if _thin(e):
+                w.writerow([e.product.supplier_pid, e.product.name, e.product.page, e.class_id, e.class_desc, f"{e.class_confidence:.2f}", "", "ABDECKUNG", "", f"{e.coverage:.2f}", "", f"nur {e.coverage:.0%} der Merkmale befüllt (Mindestabdeckung {config.MIN_COVERAGE:.0%})", "", ""])
             for f in e.features:
                 if f.value is not None and f.confidence < config.REVIEW_THRESHOLD:
                     m = e.feature_meta.get(f.feature_id, {})

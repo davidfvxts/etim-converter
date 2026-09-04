@@ -66,6 +66,7 @@ class EnrichedProduct(BaseModel):
     class_confidence: float
     features: list[FeatureValue]
     feature_meta: dict[str, dict] = Field(default_factory=dict, description="feature_id -> {desc,type,unit_id,unit_desc,n_values}")
+    coverage: float = Field(default=0.0, description="Anteil der befuellten Merkmale (0..1)")
     needs_review: bool = False
 
 

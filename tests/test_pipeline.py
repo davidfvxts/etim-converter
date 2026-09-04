@@ -81,3 +81,31 @@ def test_products_json_roundtrip(tmp_path):
     ingest.run(FIX / "katalog_mini.csv", out)
     data = json.loads((out / "products.json").read_text())
     assert data["products"][2]["name"].startswith("Kugelhahn")
+
+
+def test_min_coverage_forces_review(model, tmp_path, monkeypatch):
+    """Ein Artikel, bei dem fast nichts befüllt wurde, muss in die Review-Queue —
+    auch wenn die wenigen befüllten Werte über der Konfidenzschwelle liegen."""
+    out = tmp_path / "cov"
+    ingest.run(FIX / "katalog_mini.csv", out)
+    classify.run(out, model)
+
+    monkeypatch.setattr(config, "MIN_COVERAGE", 0.0)
+    by_pid = {e.product.supplier_pid: e for e in features.run(out, model)}
+    ref = by_pid["KH-20"]
+    assert not ref.needs_review and 0 < ref.coverage < 0.9
+
+    monkeypatch.setattr(config, "MIN_COVERAGE", 0.99)
+    by_pid = {e.product.supplier_pid: e for e in features.run(out, model)}
+    assert by_pid["KH-20"].needs_review
+
+    # der Artikel muss auch in Davids Arbeitsliste auftauchen, nicht nur im Flag
+    validate_free = report.run(out, "Muster GmbH")
+    assert "der Merkmale befüllt" in validate_free.read_text()
+    csv_rows = (out / "review.csv").read_text()
+    assert "ABDECKUNG" in csv_rows and "KH-20" in csv_rows
+
+    # und er darf nicht im Standard-Export landen
+    xml = export_bmecat.run(out, "Muster GmbH")
+    pids = [p.findtext(f"{{{NS}}}SUPPLIER_PID") for p in etree.parse(str(xml)).getroot().findall(f".//{{{NS}}}PRODUCT")]
+    assert "KH-20" not in pids

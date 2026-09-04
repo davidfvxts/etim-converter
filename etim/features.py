@@ -87,6 +87,11 @@ def fill(model: EtimModel, cp: ClassifiedProduct) -> EnrichedProduct:
                 values.append(FeatureValue(feature_id=f.feature_id, value=None, confidence=0.0, reason="vom Modell nicht beantwortet"))
     meta = {f.feature_id: {"desc": f.feature_desc, "type": f.type, "unit_id": f.unit_id, "unit_desc": f.unit_desc, "n_values": len(f.values)} for f in feats}
     low = [v for v in values if v.value is not None and v.confidence < config.REVIEW_THRESHOLD]
+    # Merkmalsabdeckung: ein Artikel, bei dem kaum ein Merkmal befuellt wurde, faellt beim
+    # Grosshaendler-Datencheck durch, auch wenn die wenigen befuellten Werte sicher sind.
+    n_filled = sum(1 for v in values if v.value is not None)
+    coverage = n_filled / len(values) if values else 0.0
+    thin = bool(values) and config.MIN_COVERAGE > 0 and coverage < config.MIN_COVERAGE
     return EnrichedProduct(
         product=p,
         class_id=class_id,
@@ -94,7 +99,8 @@ def fill(model: EtimModel, cp: ClassifiedProduct) -> EnrichedProduct:
         class_confidence=cp.decision.confidence,
         features=values,
         feature_meta=meta,
-        needs_review=cp.needs_review or bool(low),
+        needs_review=cp.needs_review or bool(low) or thin,
+        coverage=coverage,
     )
 
 
