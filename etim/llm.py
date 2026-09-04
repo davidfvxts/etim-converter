@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import re
 import time
 from typing import Any, Sequence, Type, TypeVar
 
@@ -70,6 +71,33 @@ def _err_label(e: Exception) -> str:
     return f"HTTP {code}" if code else type(e).__name__
 
 
+def _quota_exhausted(e: Exception) -> str:
+    """Erkennt ein aufgebrauchtes Tages-/Projektkontingent (nicht: zu schnell gefeuert).
+
+    Ein 429 heißt zweierlei: "kurz zu viele Anfragen" (Backoff hilft) oder "Kontingent
+    für heute weg" (Backoff hilft nie). Nur der erste Fall ist einen Retry wert; der
+    zweite braucht eine Antwort, die sagt, was zu tun ist. Rückgabe: Hinweistext oder "".
+    """
+    if _status_code(e) != 429 and "429" not in str(e):
+        return ""
+    msg = str(e)
+    if "PerDay" in msg or "free_tier" in msg or "FreeTier" in msg:
+        m = re.search(r"limit: (\d+), model: ([\w.\-]+)", msg)
+        if m:
+            return (f"Free-Tier-Kontingent erschöpft: {m.group(1)} Anfragen/Tag für "
+                    f"{m.group(2)}. Billing im Google-AI-Studio-Projekt aktivieren "
+                    f"oder GEMINI_MODEL auf ein Modell mit freiem Kontingent setzen.")
+        return ("Tageskontingent des Projekts erschöpft — Billing aktivieren "
+                "oder bis morgen warten.")
+    return ""
+
+
+def _server_retry_delay(e: Exception) -> float | None:
+    """Googles eigener Vorschlag, wann es wieder Sinn hat (retryDelay / 'retry in Xs')."""
+    m = re.search(r"[Rr]etry(?:Delay|\sin)['\":\s]+(\d+(?:\.\d+)?)s", str(e))
+    return float(m.group(1)) if m else None
+
+
 def generate_json(
     name: str,
     prompt: str,
@@ -108,11 +136,14 @@ def generate_json(
             last_err = e
             if not _is_transient(e):
                 raise RuntimeError(f"LLM-Aufruf '{name}' fehlgeschlagen: {e}") from e
+            if hint := _quota_exhausted(e):
+                raise RuntimeError(f"LLM-Aufruf '{name}' abgebrochen. {hint}") from e
             if attempt == retries - 1:
                 break
             # Kapazitätsfehler halten länger an als ein paar Sekunden; Jitter, damit
             # bei Batch-Läufen nicht alle Aufrufe gleichzeitig wieder anklopfen.
-            delay = min(2 ** attempt, 30) * (1 + random.random())
+            # Nennt der Server selbst eine Wartezeit, gilt seine.
+            delay = _server_retry_delay(e) or min(2 ** attempt, 30) * (1 + random.random())
             print(f"    {name}: {_err_label(e)}, neuer Versuch in {delay:.0f}s "
                   f"({attempt + 1}/{retries - 1})")
             time.sleep(delay)

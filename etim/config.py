@@ -11,7 +11,7 @@ CACHE = DATA / "cache"
 OUT = ROOT / "out"
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 GEMINI_EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", "gemini-embedding-001")
 ETIM_VERSION = os.getenv("ETIM_VERSION", "ETIM-10.0")
 REVIEW_THRESHOLD = float(os.getenv("ETIM_REVIEW_THRESHOLD", "0.75"))

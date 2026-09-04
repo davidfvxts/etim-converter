@@ -70,10 +70,18 @@ python -m etim review out/demo             # Review-Tabelle (CSV) für Artikel u
       bei strittigen Fällen; die Schwelle 0.75 greift auf Klassenebene praktisch nie. Belastbarer
       wäre ein Counter-Check mit einem zweiten, unabhängigen Modell — Uneinigkeit als Review-Signal
       (CLAUDE.md budgetiert dafür bereits den dritten LLM-Call pro Artikel).
+- [ ] **Billing im Google-AI-Studio-Projekt aktivieren (Geschäftsentscheidung für David).**
+      Der Key läuft auf dem Free Tier: `gemini-3.8-flash` hat dort 20 Anfragen/Tag, die
+      übrigen Flash-Modelle teilen sich knappe Kapazität und antworten zeitweise mit 503.
+      Ein Kundenkatalog mit 200–5.000 Artikeln braucht 400–10.000 Calls — auf dem Free Tier
+      unmöglich, unabhängig vom Modell. Der reine Token-Preis wäre mit 20–40 $ je
+      Vollkatalog (Batch-API: die Hälfte) nicht das Problem.
 - [ ] **Modellwahl gegen echte ETIM-Daten messen.** Bei 6 Fixture-Klassen ist Top-20 die ganze
-      Liste — Retrieval wird nicht geprüft. Erst bei ~5.500 Klassen entscheidet sich, ob
-      `gemini-3.5-flash-lite` (5x schneller, keine Thinking-Tokens) reicht oder ob es 3.8-flash
-      braucht. Ebenso `gemini-embedding-2` gegen `gemini-embedding-001` vergleichen.
+      Liste — Retrieval wird nicht geprüft. Alle getesteten Modelle (3.1-flash-lite bis
+      3.8-flash) lösen die Fixture-Fälle gleich gut; die Guardrails in `features.py`
+      (EV-Code-Whitelist, Quellzitat-Pflicht) tragen mehr als die Modellwahl. Erst bei
+      ~5.500 Klassen entscheidet sich, ob `gemini-3.5-flash-lite` reicht oder es
+      `gemini-3.8-flash` braucht. Ebenso `gemini-embedding-2` gegen `gemini-embedding-001`.
 - [ ] **Durchsatz:** ~25 s/Artikel seriell. Bei 5.000 Artikeln sind das ~35 h. Für Vollkataloge
       Gemini Batch API (50 % Rabatt, 24-h-Ziel) oder Parallelisierung vorsehen. Ausserdem fehlt
       Checkpointing: bricht ein Lauf spät ab, ist alles verloren.
