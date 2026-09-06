@@ -21,6 +21,7 @@ export   enriched  -> catalog.bmecat.xml     (BMEcat 2005 + ETIM)
 validate xml       -> validation.json        (XSD wenn vorhanden, sonst Strukturregeln)
 report   enriched  -> report.md              (Vollständigkeit, Konfidenzen, Review-Queue)
 run      = alles nacheinander
+ui       enriched  -> Prüf-Cockpit im Browser (Freigaben -> review.decisions.json)
 ```
 
 ## Wichtige Regeln
@@ -46,6 +47,9 @@ python -m etim inspect data/etim           # zeigt, welche CSV-Dateien/Spalten d
 python -m etim load-model data/etim        # baut data/cache/etim.sqlite + Embeddings
 python -m etim run katalog.pdf --job demo  # ganze Pipeline
 python -m etim review out/demo             # Review-Tabelle (CSV) für Artikel unter Schwelle
+python -m etim ui out/demo                 # Prüf-Cockpit im Browser (stdlib-Server, kein Build)
+python scripts/make_demo_data.py           # Beispieldaten der Oberfläche neu erzeugen
+python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei zum Teilen
 ```
 
 ## Stand / Nächste Schritte (aktualisiere diesen Block nach jeder Session)
@@ -100,7 +104,15 @@ python -m etim review out/demo             # Review-Tabelle (CSV) für Artikel u
 - [ ] **Durchsatz:** ~25 s/Artikel seriell. Bei 5.000 Artikeln sind das ~35 h. Für Vollkataloge
       Gemini Batch API (50 % Rabatt, 24-h-Ziel) oder Parallelisierung vorsehen. Ausserdem fehlt
       Checkpointing: bricht ein Lauf spät ab, ist alles verloren.
-- [ ] Review-UI (später; erst wenn ein Kunde zahlt)
+- [x] **Prüf-Cockpit gebaut** (`python -m etim ui out/<job>`). Vier Ansichten: Übersicht,
+      Artikel, Prüfen, Export. Kern ist das Merkmalsregister — je ETIM-Merkmal eine Zeile mit
+      Wert, Einheit, Konfidenz und darunter dem Katalogzitat, das den Wert belegt; ohne Beleg
+      steht der Grund statt eines Wertes. Freigaben landen in `review.decisions.json`.
+      Ohne neue Abhängigkeit: stdlib-Server, token-basiertes CSS, Komponenten in reinem DOM.
+      Gegen Beispieldaten und gegen einen echten DRY_RUN-Job geprüft.
+      **Offen:** die Korrekturen aus dem Cockpit fliessen noch nicht in den Export zurück —
+      `review.decisions.json` wird geschrieben, aber von `export`/`report` nicht gelesen.
+      Sinnvoll erst, wenn David das Cockpit einmal an einem echten Katalog benutzt hat.
 
 ## Dateien
 
@@ -112,5 +124,9 @@ python -m etim review out/demo             # Review-Tabelle (CSV) für Artikel u
 - `etim/export_bmecat.py` — XML-Writer
 - `etim/validate.py` — XSD/Strukturprüfung
 - `etim/report.py` — Markdown-Report + Review-CSV
+- `etim/ui.py` — Prüf-Cockpit: stdlib-Server, liefert den Job als JSON, nimmt Freigaben entgegen
+- `web/` — Oberfläche. `assets/tokens.css` ist der einzige Ort für Farb-/Typo-/Rasterwerte,
+  `assets/components.js` die Komponentenschicht. Kein Build, keine npm-Abhängigkeit.
+- `docs/cowork-prompt-etim-download.md` — Prompt für die lokale Cowork-Session (ETIM-Download)
 - `etim/cli.py` — Befehle
 - `tests/` — läuft offline mit Mini-ETIM-Fixture
