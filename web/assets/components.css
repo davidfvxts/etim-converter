@@ -1,0 +1,291 @@
+/* Komponenten. Jede ist eigenstaendig und nimmt ihre Farben aus den Tokens.
+   Trennung leisten Haarlinien; Karten, Schatten und Radien werden sparsam
+   nach Rolle vergeben, nicht flaechendeckend gestempelt. */
+
+/* === Badge ============================================================== */
+.badge {
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  padding: 2px var(--s-3);
+  border: 1px solid var(--idle-line);
+  border-radius: var(--r-pill);
+  background: var(--idle-soft);
+  color: var(--idle);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  line-height: 1.45;
+  white-space: nowrap;
+}
+.badge--ok     { background: var(--ok-soft);     border-color: var(--ok-line);     color: var(--ok); }
+.badge--warn   { background: var(--warn-soft);   border-color: var(--warn-line);   color: var(--warn); }
+.badge--crit   { background: var(--crit-soft);   border-color: var(--crit-line);   color: var(--crit); }
+.badge--accent { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
+.badge__dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex: none; }
+
+/* === Meter: Konfidenz und Abdeckung ===================================== */
+.meter { display: flex; align-items: center; gap: var(--s-4); min-width: 96px; }
+.meter__track {
+  flex: 1; height: 4px; border-radius: var(--r-pill);
+  background: var(--idle-soft); overflow: hidden;
+}
+.meter__fill {
+  height: 100%; border-radius: var(--r-pill);
+  background: var(--idle); transition: width var(--motion-med);
+}
+.meter--ok   .meter__fill { background: var(--ok); }
+.meter--warn .meter__fill { background: var(--warn); }
+.meter--crit .meter__fill { background: var(--crit); }
+.meter__pct {
+  font-size: var(--fs-xs); color: var(--ink-muted);
+  min-width: 30px; text-align: right; flex: none;
+}
+
+/* === Button ============================================================= */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--s-3);
+  height: 30px; padding: 0 var(--s-5);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-sm); font-weight: var(--fw-medium);
+  transition: background var(--motion-fast), border-color var(--motion-fast);
+}
+.btn:hover { background: var(--surface-hover); border-color: var(--ink-faint); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn--primary {
+  background: var(--accent); border-color: var(--accent); color: var(--ink-on-accent);
+}
+.btn--primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn--ghost { border-color: transparent; background: transparent; color: var(--ink-muted); }
+.btn--ghost:hover { background: var(--surface-hover); color: var(--ink); }
+.btn--sm { height: 25px; padding: 0 var(--s-4); font-size: var(--fs-xs); }
+.btn--ok      { color: var(--ok);   border-color: var(--ok-line); }
+.btn--ok:hover      { background: var(--ok-soft);   border-color: var(--ok); }
+.btn--warn    { color: var(--warn); border-color: var(--warn-line); }
+.btn--warn:hover    { background: var(--warn-soft); border-color: var(--warn); }
+.btn[aria-pressed="true"].btn--ok   { background: var(--ok-soft);   border-color: var(--ok); }
+.btn[aria-pressed="true"].btn--warn { background: var(--warn-soft); border-color: var(--warn); }
+.btn__icon { width: 14px; height: 14px; flex: none; }
+
+/* === Eingabefeld ======================================================== */
+.field { position: relative; display: flex; align-items: center; }
+.field__icon {
+  position: absolute; left: var(--s-4); width: 14px; height: 14px;
+  color: var(--ink-faint); pointer-events: none;
+}
+.field__input {
+  width: 100%; height: 30px;
+  padding: 0 var(--s-5) 0 calc(var(--s-4) + 14px + var(--s-3));
+  border: 1px solid var(--line-strong); border-radius: var(--r-md);
+  background: var(--surface); color: var(--ink); font-size: var(--fs-sm);
+  transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
+}
+.field__input::placeholder { color: var(--ink-faint); }
+.field__input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  outline: none;
+}
+.field--bare .field__input { padding-left: var(--s-5); }
+
+/* === Segmentierte Umschaltung =========================================== */
+.seg {
+  display: inline-flex; padding: 2px; gap: 2px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.seg__btn {
+  padding: 0 var(--s-5); height: 24px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs); font-weight: var(--fw-medium);
+  color: var(--ink-muted);
+  transition: background var(--motion-fast), color var(--motion-fast);
+}
+.seg__btn:hover { color: var(--ink); }
+.seg__btn[aria-selected="true"] {
+  background: var(--surface); color: var(--ink);
+  box-shadow: var(--shadow-rail);
+}
+.seg__count {
+  margin-left: var(--s-3); padding: 0 var(--s-3);
+  border-radius: var(--r-pill); background: var(--idle-soft);
+  font-size: var(--fs-2xs); color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.seg__btn[aria-selected="true"] .seg__count { background: var(--accent-soft); color: var(--accent); }
+
+/* === Karte ============================================================== */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+.card__head {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s-5);
+  padding: var(--s-5) var(--s-6);
+  border-bottom: 1px solid var(--line);
+}
+.card__title { font-size: var(--fs-md); font-weight: var(--fw-semi); }
+.card__body { padding: var(--s-6); }
+.card__body--flush { padding: 0; }
+
+/* === Kennzahl ===========================================================
+   Bewusst ohne Karte: die Kennzahlenzeile ist ein Messkopf, keine Sammlung
+   von Kacheln. Getrennt wird durch senkrechte Haarlinien. */
+.stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+  overflow: hidden;
+}
+.stat { padding: var(--s-6); border-left: 1px solid var(--line); }
+.stat:first-child { border-left: 0; }
+.stat__label {
+  font-size: var(--fs-2xs); font-weight: var(--fw-semi);
+  letter-spacing: .07em; text-transform: uppercase; color: var(--ink-faint);
+}
+.stat__value {
+  margin-top: var(--s-4);
+  font-size: var(--fs-2xl); font-weight: var(--fw-semi);
+  line-height: 1; letter-spacing: -.02em;
+}
+.stat__value--ok   { color: var(--ok); }
+.stat__value--warn { color: var(--warn); }
+.stat__value--crit { color: var(--crit); }
+.stat__unit { font-size: var(--fs-md); font-weight: var(--fw-normal); color: var(--ink-faint); margin-left: 2px; }
+.stat__sub { margin-top: var(--s-3); font-size: var(--fs-xs); color: var(--ink-muted); }
+
+/* === Tabelle ============================================================ */
+.table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.table th {
+  position: sticky; top: 0; z-index: 1;
+  padding: var(--s-4) var(--s-5);
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-2xs); font-weight: var(--fw-semi);
+  letter-spacing: .07em; text-transform: uppercase; color: var(--ink-faint);
+  text-align: left; white-space: nowrap;
+}
+.table th.is-num, .table td.is-num { text-align: right; }
+.table td { padding: var(--s-5); border-bottom: 1px solid var(--line); vertical-align: middle; }
+.table tbody tr { transition: background var(--motion-fast); }
+.table tbody tr:hover { background: var(--surface-hover); }
+.table tbody tr:last-child td { border-bottom: 0; }
+.table--clickable tbody tr { cursor: pointer; }
+
+/* === Artikelliste (Pruefansicht) ========================================
+   Der Zustand steht links als Streifen, damit die Liste im Ueberflug lesbar
+   ist, ohne dass man die Badge-Texte einzeln liest. */
+.plist__item {
+  display: block; width: 100%; text-align: left;
+  padding: var(--s-5) var(--s-6) var(--s-5) calc(var(--s-6) - 3px);
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid transparent;
+  transition: background var(--motion-fast);
+}
+.plist__item:hover { background: var(--surface-hover); }
+.plist__item[aria-current="true"] { background: var(--accent-soft); border-left-color: var(--accent); }
+.plist__item--ok   { border-left-color: var(--ok); }
+.plist__item--warn { border-left-color: var(--warn); }
+.plist__item--crit { border-left-color: var(--crit); }
+.plist__top { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-4); }
+.plist__pid { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--ink-muted); }
+.plist__name {
+  margin-top: var(--s-2); font-size: var(--fs-sm); font-weight: var(--fw-medium);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.plist__meta {
+  margin-top: var(--s-3); display: flex; align-items: center; gap: var(--s-4);
+  font-size: var(--fs-xs); color: var(--ink-faint);
+}
+
+/* === Merkmalsregister ===================================================
+   Kern der Anwendung: je ETIM-Merkmal eine Zeile, und unter jedem Wert das
+   woertliche Katalogzitat, das ihn belegt. Ohne Beleg kein Wert. */
+.ledger__row {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr) minmax(0, 1.05fr) 108px;
+  gap: var(--s-5);
+  padding: var(--s-5) var(--s-6);
+  border-bottom: 1px solid var(--line);
+  align-items: start;
+}
+.ledger__row:last-child { border-bottom: 0; }
+.ledger__row--empty { background: repeating-linear-gradient(
+    -45deg, transparent, transparent 7px, var(--surface-sunken) 7px, var(--surface-sunken) 8px); }
+.ledger__id { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--ink-faint); padding-top: 1px; }
+.ledger__desc { font-size: var(--fs-sm); color: var(--ink-muted); }
+.ledger__type { margin-top: var(--s-2); font-size: var(--fs-2xs); color: var(--ink-faint); }
+.ledger__value { font-size: var(--fs-sm); font-weight: var(--fw-medium); overflow-wrap: anywhere; }
+.ledger__value--none { color: var(--ink-faint); font-weight: var(--fw-normal); font-style: italic; }
+.ledger__unit { color: var(--ink-muted); font-weight: var(--fw-normal); }
+.ledger__evcode {
+  display: inline-block; margin-left: var(--s-3);
+  font-family: var(--font-mono); font-size: var(--fs-2xs);
+  color: var(--ink-faint);
+}
+.ledger__reason { margin-top: var(--s-3); font-size: var(--fs-xs); color: var(--ink-faint); }
+
+/* Beleg: als Zitat gesetzt, nicht als Metadatum weggeraeumt. */
+.quote {
+  margin-top: var(--s-3);
+  padding-left: var(--s-5);
+  border-left: 2px solid var(--accent-line);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-body);
+  color: var(--ink-muted);
+}
+.quote::before { content: "„"; color: var(--ink-faint); }
+.quote::after  { content: "“"; color: var(--ink-faint); }
+.quote--missing { border-left-color: var(--warn-line); color: var(--warn); font-style: italic; }
+.quote--missing::before, .quote--missing::after { content: ""; }
+
+/* === Verteilungsbalken ================================================== */
+.dist { display: flex; flex-direction: column; gap: var(--s-5); }
+.dist__row { display: grid; grid-template-columns: minmax(0, 1fr) 44px; gap: var(--s-5); align-items: center; }
+.dist__label { min-width: 0; }
+.dist__name {
+  font-size: var(--fs-sm);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dist__code { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--ink-faint); }
+.dist__track { margin-top: var(--s-3); height: 5px; background: var(--surface-sunken); border-radius: var(--r-pill); overflow: hidden; }
+.dist__fill { height: 100%; background: var(--accent); border-radius: var(--r-pill); }
+.dist__fill--warn { background: var(--warn); }
+.dist__n { font-size: var(--fs-sm); color: var(--ink-muted); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* === Leerzustand ======================================================== */
+.empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--s-4); padding: var(--s-12) var(--s-8); text-align: center; color: var(--ink-faint);
+}
+.empty__icon { width: 22px; height: 22px; color: var(--ink-faint); }
+.empty__title { font-size: var(--fs-md); font-weight: var(--fw-medium); color: var(--ink-muted); }
+.empty__hint { font-size: var(--fs-sm); max-width: 42ch; line-height: var(--lh-body); }
+
+/* === Hinweisstreifen ==================================================== */
+.note {
+  display: flex; align-items: flex-start; gap: var(--s-4);
+  padding: var(--s-5) var(--s-6);
+  border: 1px solid var(--warn-line); border-radius: var(--r-md);
+  background: var(--warn-soft); color: var(--warn);
+  font-size: var(--fs-sm); line-height: var(--lh-body);
+}
+.note--accent { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent); }
+.note__icon { width: 15px; height: 15px; flex: none; margin-top: 1px; }
+
+/* === Kurzmeldung ======================================================== */
+.toast {
+  position: fixed; bottom: var(--s-7); left: 50%;
+  transform: translateX(-50%) translateY(8px);
+  display: flex; align-items: center; gap: var(--s-4);
+  padding: var(--s-4) var(--s-6);
+  border: 1px solid var(--line-strong); border-radius: var(--r-pill);
+  background: var(--surface); box-shadow: var(--shadow-pop);
+  font-size: var(--fs-sm);
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--motion-med), transform var(--motion-med);
+  z-index: 40;
+}
+.toast.is-open { opacity: 1; transform: translateX(-50%) translateY(0); }

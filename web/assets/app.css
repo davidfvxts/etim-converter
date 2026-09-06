@@ -1,0 +1,149 @@
+/* Anwendungsgeruest und Ansichten. Layout uebernimmt den Abstand (grid/gap),
+   nicht Einzelmargins an den Kindern. */
+
+.app {
+  display: grid;
+  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  height: 100vh;
+}
+
+/* === Seitenleiste ======================================================= */
+.rail {
+  display: flex; flex-direction: column;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+  min-height: 0;
+}
+.rail__brand {
+  display: flex; align-items: center; gap: var(--s-4);
+  height: var(--topbar-h); padding: 0 var(--s-6);
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+.rail__mark {
+  width: 22px; height: 22px; flex: none;
+  border-radius: var(--r-sm);
+  background: var(--ink); color: var(--ground);
+  display: grid; place-items: center;
+  font-size: var(--fs-2xs); font-weight: var(--fw-semi); letter-spacing: -.03em;
+}
+.rail__name { font-size: var(--fs-md); font-weight: var(--fw-semi); letter-spacing: -.01em; }
+.rail__nav { padding: var(--s-5) var(--s-4); display: flex; flex-direction: column; gap: 1px; }
+.rail__item {
+  display: flex; align-items: center; gap: var(--s-4);
+  padding: var(--s-4) var(--s-5);
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--ink-muted);
+  transition: background var(--motion-fast), color var(--motion-fast);
+  text-align: left; width: 100%;
+}
+.rail__item:hover { background: var(--surface-hover); color: var(--ink); }
+.rail__item[aria-current="page"] { background: var(--accent-soft); color: var(--accent); }
+.rail__icon { width: 15px; height: 15px; flex: none; }
+.rail__badge {
+  margin-left: auto; padding: 0 var(--s-3);
+  border-radius: var(--r-pill); background: var(--warn-soft); color: var(--warn);
+  font-size: var(--fs-2xs); font-weight: var(--fw-semi); font-variant-numeric: tabular-nums;
+}
+.rail__foot {
+  margin-top: auto; padding: var(--s-5) var(--s-6);
+  border-top: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: var(--s-4);
+}
+.rail__stage { display: flex; align-items: center; gap: var(--s-4); font-size: var(--fs-xs); color: var(--ink-muted); }
+.rail__dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--idle-line); }
+.rail__dot--done { background: var(--ok); }
+.rail__dot--todo { background: var(--idle-line); }
+
+/* === Hauptbereich ======================================================= */
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+
+.topbar {
+  display: flex; align-items: center; gap: var(--s-6);
+  height: var(--topbar-h); padding: 0 var(--s-8);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  flex: none;
+}
+.topbar__title { font-size: var(--fs-lg); font-weight: var(--fw-semi); letter-spacing: -.015em; }
+.topbar__sep { width: 1px; height: 18px; background: var(--line); flex: none; }
+.topbar__meta { display: flex; align-items: center; gap: var(--s-5); font-size: var(--fs-xs); color: var(--ink-muted); }
+.topbar__spacer { margin-left: auto; }
+.topbar__actions { display: flex; align-items: center; gap: var(--s-4); }
+
+.view { padding: var(--s-8); display: flex; flex-direction: column; gap: var(--s-7); min-height: 0; }
+/* In einer scrollenden Flex-Spalte schrumpfen Kinder sonst auf die Resthoehe
+   zusammen — Kennzahlen und Karten verlieren dabei ihren Inhalt. */
+.view > *:not(.split) { flex: none; }
+.view--flush { padding: 0; gap: 0; flex: 1; }
+.view__head { display: flex; align-items: center; gap: var(--s-5); }
+.view__title { font-size: var(--fs-md); font-weight: var(--fw-semi); }
+.view__spacer { margin-left: auto; }
+.grid-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s-7); align-items: start; }
+
+/* === Pruefansicht: zwei Spalten ======================================== */
+.split { display: grid; grid-template-columns: 316px minmax(0, 1fr); flex: 1; min-height: 0; }
+.split__list { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--surface); }
+.split__filter { padding: var(--s-5) var(--s-6); border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: var(--s-5); flex: none; }
+.split__scroll { flex: 1; min-height: 0; }
+.split__detail { min-width: 0; min-height: 0; overflow-y: auto; background: var(--ground); }
+
+.detail { padding: var(--s-8); display: flex; flex-direction: column; gap: var(--s-7); }
+.detail > * { flex: none; }
+.detail__head { display: flex; align-items: flex-start; gap: var(--s-6); }
+.detail__pid { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--ink-muted); }
+.detail__name { margin-top: var(--s-3); font-size: var(--fs-xl); font-weight: var(--fw-semi); letter-spacing: -.015em; }
+.detail__sub { margin-top: var(--s-3); font-size: var(--fs-sm); color: var(--ink-muted); line-height: var(--lh-body); max-width: 68ch; }
+.detail__actions { margin-left: auto; display: flex; gap: var(--s-4); flex: none; }
+
+/* Klassenentscheidung: gewaehlte Klasse gegen die zweitbeste, mit Begruendung. */
+.decision { display: grid; grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr); gap: var(--s-6); align-items: stretch; }
+.decision__rule { background: var(--line); }
+.decision__cell { display: flex; flex-direction: column; gap: var(--s-3); min-width: 0; }
+.decision__class { font-size: var(--fs-md); font-weight: var(--fw-semi); }
+.decision__code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--ink-muted); }
+.decision__why {
+  margin-top: var(--s-5); padding-top: var(--s-5);
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-sm); color: var(--ink-muted); line-height: var(--lh-body);
+}
+
+/* Rohattribute aus dem Katalog */
+.attrs { display: flex; flex-wrap: wrap; gap: var(--s-3); }
+.attr {
+  display: inline-flex; align-items: baseline; gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--surface-sunken); font-size: var(--fs-xs);
+}
+.attr__k { color: var(--ink-faint); }
+.attr__v { font-family: var(--font-mono); }
+
+/* === Ausgabedateien ===================================================== */
+.files { display: flex; flex-direction: column; }
+.file {
+  display: flex; align-items: center; gap: var(--s-5);
+  padding: var(--s-5) var(--s-6); border-bottom: 1px solid var(--line);
+}
+.file:last-child { border-bottom: 0; }
+.file__name { font-family: var(--font-mono); font-size: var(--fs-sm); }
+.file__desc { font-size: var(--fs-xs); color: var(--ink-muted); margin-top: 2px; }
+.file__spacer { margin-left: auto; }
+
+@media (max-width: 1080px) {
+  .app { grid-template-columns: 56px minmax(0, 1fr); }
+  .rail__name, .rail__item span, .rail__foot, .rail__badge { display: none; }
+  .rail__item { justify-content: center; }
+  .rail__brand { padding: 0; justify-content: center; }
+  .grid-2 { grid-template-columns: minmax(0, 1fr); }
+  .split { grid-template-columns: 260px minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .split { grid-template-columns: minmax(0, 1fr); }
+  .split__list { display: none; }
+  .decision { grid-template-columns: minmax(0, 1fr); }
+  .decision__rule { display: none; }
+  .ledger__row { grid-template-columns: minmax(0, 1fr); gap: var(--s-3); }
+  .view { padding: var(--s-6); }
+  .detail { padding: var(--s-6); }
+}

@@ -7,3 +7,5 @@ data/cache/
 data/downloads/
 out/
 *.pyc
+web/preview.html
+web/preview.body.html

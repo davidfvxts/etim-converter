@@ -1,0 +1,166 @@
+/* Design-Tokens. Einziger Ort, an dem Farb-, Typo- und Rasterwerte stehen.
+   Komponenten greifen ausschliesslich auf Tokens zu, nie auf Literale —
+   sonst bricht eines der drei Theme-Szenarien (hell, dunkel, System). */
+
+:root {
+  /* --- Flaechen und Linien -------------------------------------------------
+     Kuehl-schiefergraue Neutrale: das Werkzeug steht neben Datenblaettern und
+     Grosshaendler-Portalen, nicht neben einer Marketing-Seite. */
+  --ground:          #fafbfc;
+  --surface:         #ffffff;
+  --surface-sunken:  #f3f5f8;
+  --surface-hover:   #f7f8fa;
+  --line:            #e4e7ec;
+  --line-strong:     #ccd2db;
+
+  /* --- Text --- */
+  --ink:             #0f1419;
+  --ink-muted:       #58616f;
+  --ink-faint:       #868f9e;
+  --ink-on-accent:   #ffffff;
+
+  /* --- Akzent: ausschliesslich Navigation, Fokus, Verweise --- */
+  --accent:          #1e4fd8;
+  --accent-hover:    #1a44ba;
+  --accent-soft:     #ecf1ff;
+  --accent-line:     #c3d2fb;
+
+  /* --- Semantik: Zustand der Daten, bewusst vom Akzent getrennt --- */
+  --ok:              #0b6e4f;
+  --ok-soft:         #e7f4ee;
+  --ok-line:         #b6ddca;
+  --warn:            #8a5406;
+  --warn-soft:       #fbf1dd;
+  --warn-line:       #e8ce93;
+  --crit:            #a8291e;
+  --crit-soft:       #fbeae8;
+  --crit-line:       #eec0ba;
+  --idle:            #6b7482;
+  --idle-soft:       #eef0f3;
+  --idle-line:       #d7dce3;
+
+  /* --- Schrift ---------------------------------------------------------------
+     Systemschriften: das Werkzeug laeuft offline auf Davids Rechner, eine
+     Webfont-Abhaengigkeit waere dort ein stiller Fehlschlag. Die Paarung
+     Sans + Mono ist inhaltlich begruendet — ETIM ist ein Codesystem, und
+     EC-/EF-/EV-Codes muessen als Codes lesbar sein, nicht als Fliesstext. */
+  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+               "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono",
+               "Roboto Mono", Menlo, Consolas, monospace;
+
+  --fs-2xs: 10.5px;
+  --fs-xs:  11.5px;
+  --fs-sm:  12.5px;
+  --fs-md:  13.5px;
+  --fs-lg:  15px;
+  --fs-xl:  19px;
+  --fs-2xl: 25px;
+  --fs-3xl: 32px;
+
+  --lh-tight: 1.2;
+  --lh-snug:  1.4;
+  --lh-body:  1.6;
+
+  --fw-normal: 400;
+  --fw-medium: 500;
+  --fw-semi:   600;
+
+  /* --- Raster: 4px-Basis --- */
+  --s-1: 2px;  --s-2: 4px;  --s-3: 6px;  --s-4: 8px;
+  --s-5: 12px; --s-6: 16px; --s-7: 20px; --s-8: 24px;
+  --s-9: 32px; --s-10: 40px; --s-11: 48px; --s-12: 64px;
+
+  /* --- Radien: eng gehalten. Ein Messinstrument hat keine weichen Ecken. --- */
+  --r-sm: 3px;
+  --r-md: 5px;
+  --r-lg: 8px;
+  --r-pill: 999px;
+
+  /* --- Erhebung: sparsam. Trennung leisten Linien, nicht Schatten. --- */
+  --shadow-pop: 0 1px 2px rgba(15, 20, 25, .06), 0 8px 24px rgba(15, 20, 25, .10);
+  --shadow-rail: 0 1px 3px rgba(15, 20, 25, .05);
+
+  /* --- Bewegung --- */
+  --motion-fast: 110ms cubic-bezier(.2, 0, .38, .9);
+  --motion-med:  180ms cubic-bezier(.2, 0, .38, .9);
+
+  /* --- Layout-Konstanten --- */
+  --rail-w: 208px;
+  --topbar-h: 52px;
+}
+
+/* Dunkel per Systemeinstellung — greift nur, wenn der Betrachter nicht
+   ausdruecklich hell gewaehlt hat. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:          #0d1117;
+    --surface:         #151b23;
+    --surface-sunken:  #1b222c;
+    --surface-hover:   #1d2430;
+    --line:            #242c38;
+    --line-strong:     #35404f;
+
+    --ink:             #e7ecf3;
+    --ink-muted:       #99a4b4;
+    --ink-faint:       #6c7a8c;
+    --ink-on-accent:   #0d1117;
+
+    --accent:          #86a6ff;
+    --accent-hover:    #a0b9ff;
+    --accent-soft:     #18233c;
+    --accent-line:     #2c3f6b;
+
+    --ok:              #4ecb94;
+    --ok-soft:         #11291f;
+    --ok-line:         #1f4a37;
+    --warn:            #e0b341;
+    --warn-soft:       #2c2410;
+    --warn-line:       #4d3f18;
+    --crit:            #f2796a;
+    --crit-soft:       #331916;
+    --crit-line:       #572a25;
+    --idle:            #8b97a6;
+    --idle-soft:       #1c232d;
+    --idle-line:       #2f3844;
+
+    --shadow-pop: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .45);
+    --shadow-rail: 0 1px 3px rgba(0, 0, 0, .3);
+  }
+}
+
+/* Ausdrueckliche Wahl gewinnt in beide Richtungen. */
+:root[data-theme="dark"] {
+  --ground:          #0d1117;
+  --surface:         #151b23;
+  --surface-sunken:  #1b222c;
+  --surface-hover:   #1d2430;
+  --line:            #242c38;
+  --line-strong:     #35404f;
+
+  --ink:             #e7ecf3;
+  --ink-muted:       #99a4b4;
+  --ink-faint:       #6c7a8c;
+  --ink-on-accent:   #0d1117;
+
+  --accent:          #86a6ff;
+  --accent-hover:    #a0b9ff;
+  --accent-soft:     #18233c;
+  --accent-line:     #2c3f6b;
+
+  --ok:              #4ecb94;
+  --ok-soft:         #11291f;
+  --ok-line:         #1f4a37;
+  --warn:            #e0b341;
+  --warn-soft:       #2c2410;
+  --warn-line:       #4d3f18;
+  --crit:            #f2796a;
+  --crit-soft:       #331916;
+  --crit-line:       #572a25;
+  --idle:            #8b97a6;
+  --idle-soft:       #1c232d;
+  --idle-line:       #2f3844;
+
+  --shadow-pop: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .45);
+  --shadow-rail: 0 1px 3px rgba(0, 0, 0, .3);
+}

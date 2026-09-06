@@ -40,6 +40,11 @@ def main(argv=None):
     s = sub.add_parser("review", help="Review-CSV eines Jobs zusammenfassen")
     s.add_argument("job_dir", type=Path)
 
+    s = sub.add_parser("ui", help="Prüf-Cockpit im Browser öffnen")
+    s.add_argument("job_dir", type=Path, help="Ordner unter out/, z. B. out/demo")
+    s.add_argument("--port", type=int, default=8000)
+    s.add_argument("--no-open", action="store_true", help="Browser nicht automatisch öffnen")
+
     a = ap.parse_args(argv)
     if a.cmd == "inspect":
         from .model import inspect_folder
@@ -57,6 +62,11 @@ def main(argv=None):
 
             ids, emb = _class_matrix(m)
             print(f"Embeddings: {emb.shape}")
+        return
+    if a.cmd == "ui":
+        from .ui import run as run_ui
+
+        run_ui(a.job_dir, a.port, not a.no_open)
         return
     if a.cmd == "review":
         import csv
