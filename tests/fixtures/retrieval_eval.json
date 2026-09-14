@@ -1,0 +1,84 @@
+{
+  "note": "Retrieval-Testset. 20 Artikel, wie ein Hersteller sie in einem Katalog schreibt — je einmal deutsch und englisch, um den Sprachsprung zu den englischen ETIM-Klassentexten zu isolieren. 'expected' ist die korrekte Klasse, 'also_ok' sind Klassen, die ein Fachmann ebenfalls vertreten wuerde (fuer die weiche Quote). Ground Truth am 14.9.2026 gegen ETIM 10.0 geprueft: fuer jeden Eintrag wurden die Konkurrenzklassen derselben Produktfamilie gesichtet.",
+  "items": [
+    {"sector":"SHK","expected":"EC011343","also_ok":[],
+     "de":{"name":"Kugelhahn DN 25","description":"Messing vernickelt, beidseitig Innengewinde, Hebelgriff rot, fuer Trink- und Heizungswasser","attributes":[["Nennweite","DN 25"],["Nenndruck","PN 16"],["Anschluss","IG 1 Zoll"]]},
+     "en":{"name":"Ball valve DN 25","description":"Nickel-plated brass, female thread both sides, red lever handle, for drinking and heating water","attributes":[["Nominal size","DN 25"],["Nominal pressure","PN 16"],["Connection","female 1 inch"]]}},
+
+    {"sector":"SHK","expected":"EC011333","also_ok":["EC010980"],
+     "de":{"name":"Heizungspumpe Inline 25/60","description":"Nassläufer-Umwaelzpumpe fuer Heizungsanlagen, elektronisch geregelt, Baulaenge 180 mm","attributes":[["Spannung","230 V"],["Anschluss","Rp 1"],["Foerderhoehe","6 m"]]},
+     "en":{"name":"Heating pump inline 25/60","description":"Glandless circulation pump for heating systems, electronically controlled, length 180 mm","attributes":[["Voltage","230 V"],["Connection","Rp 1"],["Head","6 m"]]}},
+
+    {"sector":"Elektro","expected":"EC000042","also_ok":["EC002694"],
+     "de":{"name":"Leitungsschutzschalter B16","description":"1-polig, Charakteristik B, fuer Hutschienenmontage im Verteiler","attributes":[["Bemessungsstrom","16 A"],["Schaltvermoegen","6 kA"],["Breite","1 TE"]]},
+     "en":{"name":"Miniature circuit breaker B16","description":"1-pole, characteristic B, for DIN rail mounting in the distribution board","attributes":[["Rated current","16 A"],["Breaking capacity","6 kA"],["Width","1 module"]]}},
+
+    {"sector":"Elektro","expected":"EC000003","also_ok":["EC002693"],
+     "de":{"name":"FI-Schutzschalter 40A/0,03A","description":"Fehlerstrom-Schutzeinrichtung Typ A, 4-polig, allstromsensitiv nein","attributes":[["Bemessungsstrom","40 A"],["Ausloesestrom","30 mA"],["Polzahl","4"]]},
+     "en":{"name":"RCD 40A/0.03A","description":"Residual current protective device type A, 4-pole","attributes":[["Rated current","40 A"],["Tripping current","30 mA"],["Poles","4"]]}},
+
+    {"sector":"Elektro","expected":"EC000046","also_ok":[],
+     "de":{"name":"Kabelbinder 200 x 4,8 mm","description":"Polyamid 6.6, schwarz, witterungsbestaendig, Buendel von 100 Stueck","attributes":[["Laenge","200 mm"],["Breite","4,8 mm"],["Material","PA 6.6"]]},
+     "en":{"name":"Cable tie 200 x 4.8 mm","description":"Polyamide 6.6, black, weather resistant, bundle of 100 pieces","attributes":[["Length","200 mm"],["Width","4.8 mm"],["Material","PA 6.6"]]}},
+
+    {"sector":"SHK","expected":"EC010958","also_ok":[],
+     "de":{"name":"Ausdehnungsgefaess 18 Liter","description":"Membran-Druckausdehnungsgefaess fuer geschlossene Heizungsanlagen, Vordruck 1,5 bar","attributes":[["Inhalt","18 l"],["Betriebsdruck","6 bar"],["Anschluss","R 3/4"]]},
+     "en":{"name":"Expansion vessel 18 litre","description":"Diaphragm pressure expansion vessel for closed heating systems, pre-charge 1.5 bar","attributes":[["Volume","18 l"],["Operating pressure","6 bar"],["Connection","R 3/4"]]}},
+
+    {"sector":"SHK","expected":"EC004485","also_ok":[],
+     "de":{"name":"Wohnungswasserzaehler Q3 2,5","description":"Mehrstrahl-Trockenlaeufer fuer Kaltwasser, Baulaenge 110 mm, eichfaehig","attributes":[["Dauerdurchfluss","Q3 2,5"],["Baulaenge","110 mm"],["Medium","kalt bis 30 °C"]]},
+     "en":{"name":"Apartment water meter Q3 2.5","description":"Multi-jet dry dial for cold water, length 110 mm, calibratable","attributes":[["Permanent flow","Q3 2.5"],["Length","110 mm"],["Medium","cold up to 30 °C"]]}},
+
+    {"sector":"Elektro","expected":"EC000029","also_ok":["EC001028","EC000443"],
+     "de":{"name":"Drucktaster Schliesser","description":"Taster-Einsatz mit Schliesserkontakt fuer Unterputzmontage, ohne Abdeckung","attributes":[["Kontakt","1 Schliesser"],["Bemessungsspannung","250 V"],["Montage","Unterputz"]]},
+     "en":{"name":"Push button NO","description":"Push button insert with normally open contact for flush mounting, without cover","attributes":[["Contact","1 NO"],["Rated voltage","250 V"],["Mounting","flush"]]}},
+
+    {"sector":"Elektro","expected":"EC000066","also_ok":[],
+     "de":{"name":"Leistungsschuetz 9 A","description":"3-poliges Schuetz fuer Motoranwendungen AC-3, Spule 230 V AC, Hutschiene","attributes":[["Bemessungsstrom","9 A"],["Polzahl","3"],["Spulenspannung","230 V AC"]]},
+     "en":{"name":"Power contactor 9 A","description":"3-pole contactor for motor applications AC-3, coil 230 V AC, DIN rail","attributes":[["Rated current","9 A"],["Poles","3"],["Coil voltage","230 V AC"]]}},
+
+    {"sector":"Elektro","expected":"EC000214","also_ok":["EC002288"],
+     "de":{"name":"Kleinverteiler AP 1-reihig","description":"Aufputz-Verteilergehaeuse mit transparenter Tuer, 12 Teilungseinheiten, leer","attributes":[["Reihen","1"],["Teilungseinheiten","12"],["Schutzart","IP65"]]},
+     "en":{"name":"Small distribution board surface 1 row","description":"Surface mounted enclosure with transparent door, 12 modules, empty","attributes":[["Rows","1"],["Modules","12"],["Protection","IP65"]]}},
+
+    {"sector":"SHK","expected":"EC003263","also_ok":[],
+     "de":{"name":"Raumthermostat smart","description":"WLAN-faehiger Raumregler mit App-Steuerung und Wochenprogramm, fuer Fussbodenheizung","attributes":[["Schnittstelle","WLAN"],["Regelbereich","5–35 °C"],["Versorgung","230 V"]]},
+     "en":{"name":"Smart room thermostat","description":"Wi-Fi room controller with app control and weekly program, for underfloor heating","attributes":[["Interface","Wi-Fi"],["Control range","5–35 °C"],["Supply","230 V"]]}},
+
+    {"sector":"Elektro","expected":"EC000109","also_ok":[],
+     "de":{"name":"Lichtbandleuchte LED 1500 mm","description":"Langfeldleuchte zur Deckenmontage, durchgehende Verdrahtung, fuer Lager und Werkstatt","attributes":[["Laenge","1500 mm"],["Farbtemperatur","4000 K"],["Schutzart","IP20"]]},
+     "en":{"name":"LED batten luminaire 1500 mm","description":"Long-field luminaire for ceiling mounting, through-wiring, for warehouse and workshop","attributes":[["Length","1500 mm"],["Colour temperature","4000 K"],["Protection","IP20"]]}},
+
+    {"sector":"SHK","expected":"EC000393","also_ok":[],
+     "de":{"name":"Warmwasser-Waermepumpe 270 l","description":"Brauchwasser-Waermepumpe zur Kelleraufstellung, Luft-Wasser, mit emailliertem Speicher","attributes":[["Speicherinhalt","270 l"],["Leistung","1,9 kW"],["Aufstellung","innen"]]},
+     "en":{"name":"Hot water heat pump 270 l","description":"Domestic hot water heat pump for basement installation, air-to-water, enamelled cylinder","attributes":[["Tank volume","270 l"],["Power","1.9 kW"],["Installation","indoor"]]}},
+
+    {"sector":"SHK","expected":"EC010284","also_ok":[],
+     "de":{"name":"Bodenablauf DN 50","description":"Ablauf mit einem seitlichen Zulauf, Edelstahlrost 150 x 150 mm, fuer Kellerraeume","attributes":[["Nennweite","DN 50"],["Zulaeufe","1"],["Rost","Edelstahl"]]},
+     "en":{"name":"Floor drain DN 50","description":"Drain with one lateral inlet, stainless steel grate 150 x 150 mm, for basements","attributes":[["Nominal size","DN 50"],["Inlets","1"],["Grate","stainless steel"]]}},
+
+    {"sector":"Elektro","expected":"EC000493","also_ok":[],
+     "de":{"name":"Erdungsrohrschelle 1/2–2 Zoll","description":"Schelle zum Anschluss des Potentialausgleichs an metallene Rohrleitungen, Stahl verzinkt","attributes":[["Spannbereich","1/2 bis 2 Zoll"],["Material","Stahl verzinkt"],["Anschluss","Bandeisen"]]},
+     "en":{"name":"Earthing pipe clamp 1/2–2 inch","description":"Clamp for connecting equipotential bonding to metal pipes, galvanised steel","attributes":[["Clamping range","1/2 to 2 inch"],["Material","galvanised steel"],["Connection","flat strip"]]}},
+
+    {"sector":"Elektro","expected":"EC000113","also_ok":["EC002428"],
+     "de":{"name":"Abzweigdose fuer Installationskanal","description":"Dose zum Einbau in Bruestungskanal, mit 4-poliger Klemme, Deckel abnehmbar","attributes":[["Klemmen","4-polig"],["Einbau","Installationskanal"],["Farbe","reinweiss"]]},
+     "en":{"name":"Junction box for installation duct","description":"Box for mounting in trunking, with 4-pole terminal, removable cover","attributes":[["Terminals","4-pole"],["Mounting","installation duct"],["Colour","pure white"]]}},
+
+    {"sector":"SHK","expected":"EC010003","also_ok":[],
+     "de":{"name":"Tauchthermostat 0–90 °C","description":"Regelthermostat mit Fuehlerrohr zum Einbau in Tauchhuelse, Schaltdifferenz 6 K","attributes":[["Regelbereich","0–90 °C"],["Fuehlerlaenge","100 mm"],["Schaltleistung","16 A"]]},
+     "en":{"name":"Immersion thermostat 0–90 °C","description":"Control thermostat with sensor tube for installation in a pocket, switching difference 6 K","attributes":[["Range","0–90 °C"],["Sensor length","100 mm"],["Switching capacity","16 A"]]}},
+
+    {"sector":"SHK","expected":"EC003872","also_ok":["EC004884"],
+     "de":{"name":"Scheitholzkessel 25 kW","description":"Festbrennstoffkessel fuer Stueckholz, mit Abgasgebläse und Rueckbrandsicherung","attributes":[["Nennleistung","25 kW"],["Brennstoff","Scheitholz"],["Fuellraum","100 l"]]},
+     "en":{"name":"Log wood boiler 25 kW","description":"Solid fuel boiler for logs, with flue gas fan and burn-back protection","attributes":[["Rated output","25 kW"],["Fuel","log wood"],["Chamber","100 l"]]}},
+
+    {"sector":"SHK","expected":"EC010262","also_ok":[],
+     "de":{"name":"Manometer-Absperrventil G 1/2","description":"Absperrventil mit Pruefstutzen zum Anschluss von Druckmessgeraeten","attributes":[["Anschluss","G 1/2"],["Nenndruck","PN 25"],["Werkstoff","Messing"]]},
+     "en":{"name":"Pressure gauge shut-off valve G 1/2","description":"Shut-off valve with test connection for mounting pressure measuring instruments","attributes":[["Connection","G 1/2"],["Nominal pressure","PN 25"],["Material","brass"]]}},
+
+    {"sector":"Elektro","expected":"EC000062","also_ok":[],
+     "de":{"name":"Strassenleuchte LED 60 W","description":"Mastaufsatzleuchte fuer die Beleuchtung von Strassen und Plaetzen, Ueberspannungsschutz 10 kV","attributes":[["Leistung","60 W"],["Farbtemperatur","3000 K"],["Schutzart","IP66"]]},
+     "en":{"name":"LED street luminaire 60 W","description":"Post-top luminaire for lighting streets and public places, surge protection 10 kV","attributes":[["Power","60 W"],["Colour temperature","3000 K"],["Protection","IP66"]]}}
+  ]
+}

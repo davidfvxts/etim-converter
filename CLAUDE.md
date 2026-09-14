@@ -103,24 +103,31 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
       Sekunden in 429. `llm.py` hat jetzt ein Token-Bucket ueber die Texte
       (`ETIM_EMBED_TEXTS_PER_MIN`, Default 2500) und respektiert die vom Server genannte
       Wartezeit. Free Tier war nie das Problem — Billing ist seit 14.9.2026 aktiv.
-- [ ] **Erste echte Retrieval-Stichprobe** (5 Anfragen gegen alle 5.640 Klassen, Top-3):
-      Umwaelzpumpe, Kabelbinder und Heizkoerperventil sauber auf Platz 1. Kugelhahn landete auf
-      **Platz 2** hinter "Gas valve", LED-Panel gar nicht in den Top-3 ("Pendant luminaire" vorn).
-      Lesart: **Top-1 ist nicht verlaesslich, Top-20 (der Pipeline-Wert) sehr wahrscheinlich schon.**
-      Das stuetzt die bestehende Architektur — Retrieval breit, Entscheidung beim LLM. Die
-      geplante Recall@5/@20-Messung bleibt trotzdem der naechste inhaltliche Schritt.
-- [x] **Modelle auf den neuesten Stand gesetzt** (14.9.2026, Entscheidung David: neuestes und
-      effizientestes Modell). Modellliste live gegen die API geprüft:
-      `GEMINI_MODEL=gemini-3.8-flash` (neuestes Flash; darüber liegt nur noch
-      `gemini-3.1-pro-preview`) und `GEMINI_EMBED_MODEL=gemini-embedding-2` (seit kurzem GA,
-      löst `gemini-embedding-001` ab, ebenfalls 3072 Dim — Cache-Format bleibt gleich,
-      der `.npz`-Cache muss aber neu gebaut werden).
-      **Free-Tier-Vorbehalt bleibt:** `gemini-3.8-flash` hat dort 20 Anfragen/Tag.
-- [ ] **Retrieval messen (wichtigste offene Frage).** Bei 6 Fixture-Klassen ist Top-20 die ganze
-      Liste, Retrieval wird also nie geprüft. Bei ~5.500 Klassen entscheidet sich hier alles:
-      landet die richtige Klasse nicht in den Top-20, kann kein nachgelagertes Modell das
-      reparieren. Geplant: 4 Fixture-Artikel + 10–15 realistische SHK-/Elektro-Artikel,
-      Recall@5/@20, `gemini-embedding-001` gegen `gemini-embedding-2`.
+- [x] **Retrieval gemessen — die wichtigste offene Frage ist beantwortet** (14.9.2026).
+      `make eval` bzw. `python scripts/eval_retrieval.py`; Testset:
+      `tests/fixtures/retrieval_eval.json`, 20 Artikel (10 SHK, 10 Elektro), jeder
+      **deutsch und englisch**, weil Kundenkataloge deutsch sind und die ETIM-Klassentexte
+      englisch. Gemessen wird der echte Pfad (`classify.query_text` + `_class_matrix`).
+
+      | Sprache | R@1 | R@3 | R@5 | R@10 | R@20 |
+      |---|---|---|---|---|---|
+      | deutsch | 55 % | 65 % | 90 % | **100 %** | **100 %** |
+      | englisch | 70 % | 95 % | 95 % | **100 %** | **100 %** |
+
+      Schlechtester Rang ueber alle 40 Laeufe: **8** (Wohnungswasserzaehler).
+      **Befund: Top-20 traegt, und zwar mit Reserve.** Der Sprachsprung kostet Praezision
+      an der Spitze (R@1 55 % statt 70 %, R@3 65 % statt 95 %), aber nicht die Abdeckung.
+      Genau dafuer ist die Architektur gebaut — breit abrufen, das LLM entscheiden lassen.
+      Eine Uebersetzung der Artikeltexte vor dem Retrieval ist damit **nicht** noetig.
+      **Einschraenkung, die mitgelesen werden muss:** n = 20. Null Fehler bei 20 Faellen
+      heisst nicht 0 % Fehlerrate — die obere 95-%-Schranke liegt bei rund 14 %. Die Zahl
+      taugt als Freigabe fuer die Architektur, nicht als Qualitaetsversprechen an Kunden.
+      `TOP_K_CLASSES` bleibt bei 20: R@10 war zwar ebenfalls 100 %, aber auf dieser
+      Stichprobengroesse waere das Sparen am Kontext die falsche Optimierung.
+- [ ] **Naechste Ausbaustufe der Messung:** die bekannte Falle ist die Abgrenzung
+      Hauptprodukt vs. "Accessories/spare parts for …" (ETIM hat davon eigene Klassen,
+      siehe DECIDE_PROMPT). Das Testset enthaelt dazu noch keinen einzigen Fall. Vor dem
+      ersten Kundenkatalog 5–8 Zubehoerartikel ergaenzen und erneut messen.
 - [ ] Modellwahl gegen echte Daten: `gemini-3.5-flash-lite` gegen `gemini-3.8-flash` auf denselben
       Artikeln (Trefferquote, Laufzeit, Kosten je Artikel). Gegen die Fixture waren alle Modelle
       ununterscheidbar; die Guardrails in `features.py` (EV-Code-Whitelist, Quellzitat-Pflicht)
@@ -143,12 +150,13 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
       bei strittigen Fällen; die Schwelle 0.75 greift auf Klassenebene praktisch nie. Belastbarer
       wäre ein Counter-Check mit einem zweiten, unabhängigen Modell — Uneinigkeit als Review-Signal
       (CLAUDE.md budgetiert dafür bereits den dritten LLM-Call pro Artikel).
-- [ ] **Billing im Google-AI-Studio-Projekt aktivieren (Geschäftsentscheidung für David).**
-      Der Key läuft auf dem Free Tier: `gemini-3.8-flash` hat dort 20 Anfragen/Tag, die
-      übrigen Flash-Modelle teilen sich knappe Kapazität und antworten zeitweise mit 503.
-      Ein Kundenkatalog mit 200–5.000 Artikeln braucht 400–10.000 Calls — auf dem Free Tier
-      unmöglich, unabhängig vom Modell. Der reine Token-Preis wäre mit 20–40 $ je
-      Vollkatalog (Batch-API: die Hälfte) nicht das Problem.
+- [x] **Billing im Google-AI-Studio-Projekt aktiv** (David, 14.9.2026). Der Free Tier ist damit
+      kein Thema mehr. Modelle stehen auf `gemini-3.8-flash` und `gemini-embedding-2`.
+      Preisstand 14.9.2026: 3.8-flash $0,75 Input / $3,75 Output je 1M — guenstiger als
+      3.5-flash ($1,50/$9,00) und neuer. **Achtung: Einfuehrungspreis, ab 1.1.2027 $1,50/$7,50.**
+      Grobe Rechnung je Vollkatalog (~10k Input, ~1,5k Output je Artikel): 200 Artikel ~$3,
+      1.000 ~$13, 5.000 ~$65; mit Batch API die Haelfte. Bei vierstelligen Pilotpreisen unter
+      1 % Kostenanteil — der Engpass ist der Durchsatz, nicht der Token-Preis.
 - [ ] **Durchsatz:** ~25 s/Artikel seriell. Bei 5.000 Artikeln sind das ~35 h. Für Vollkataloge
       Gemini Batch API (50 % Rabatt, 24-h-Ziel) oder Parallelisierung vorsehen. Ausserdem fehlt
       Checkpointing: bricht ein Lauf spät ab, ist alles verloren.
