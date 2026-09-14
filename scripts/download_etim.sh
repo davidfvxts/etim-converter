@@ -10,7 +10,7 @@ declare -A FILES=(
   ["etim10-csv.zip"]="$BASE/2024/12/ETIM-10.0-ALL-SECTORS-CSV-METRIC-EI-2024-12-05.zip"
   ["etim10-ixf.zip"]="$BASE/2024/12/ETIM-10.0-ALL-SECTORS-IXF-WITH-CHANGE-CODES-METRIC-EI-2024-12-05.zip"
   ["ixf-format.zip"]="$BASE/2024/08/ETIMIXF-3.1-format-V-2024-08.zip"
-  ["bmecat-guideline.zip"]="$BASE/2024/12/ETIM-BMEcat-Guideline-V5-0-2-2024-12-12.zip"
+  ["bmecat-guideline.zip"]="$BASE/2021/09/ETIM-BMEcat-Guideline-V5-0-2-2024-12-12.zip"
   ["xchange-2.0.zip"]="$BASE/2026/04/ETIM-xChange_V2.0-2026-04-30.zip"
 )
 

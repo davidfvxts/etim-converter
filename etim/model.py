@@ -1,18 +1,24 @@
 """ETIM-Klassifikationsmodell laden (CSV-Release) und abfragen.
 
-Erwartete Tabellen (Namen aus dem ETIM-Datenmodell; Groß-/Kleinschreibung egal,
-Dateiendungen .csv, Trennzeichen wird erkannt):
+Tabellen wie im echten Release ETIM-10.0-ALL-SECTORS-CSV-METRIC-EI-2024-12-05
+(verifiziert am 14.9.2026; Groß-/Kleinschreibung egal, Trennzeichen wird erkannt):
 
-  ETIMARTGROUP                (ARTGROUPID, GROUPDESC_EN)
-  ETIMARTCLASS                (ARTCLASSID, ARTGROUPID, ARTCLASSDESC_EN, ARTCLASSVERSION, ...)
-  ETIMSYNONYM_EN / ETIMSYNONYM(ARTCLASSID, CLASSSYNONYM)
-  ETIMFEATURE                 (FEATUREID, FEATUREDESC_EN)
-  ETIMUNIT                    (UNITOFMEASID, UNITDESC_EN)
-  ETIMVALUE                   (VALUEID, VALUEDESC_EN)
+  ETIMARTGROUP                (ARTGROUPID, GROUPDESC)
+  ETIMARTCLASS                (ARTCLASSID, ARTGROUPID, ARTCLASSDESC, ARTCLASSVERSION, ARTCLASSVERSIONDATE)
+  ETIMARTCLASSSYNONYMMAP      (ARTCLASSID, CLASSSYNONYM)
+  ETIMFEATURE                 (FEATUREID, FEATUREGROUPID, FEATUREDESC)
+  ETIMFEATUREGROUP            (FEATUREGROUPID, FEATUREGROUPDESC)   — derzeit ungenutzt
+  ETIMUNIT                    (UNITOFMEASID, UNITDESC)
+  ETIMVALUE                   (VALUEID, VALUEDESC)
   ETIMARTCLASSFEATUREMAP      (ARTCLASSFEATURENR, ARTCLASSID, FEATUREID, FEATURETYPE, UNITOFMEASID, SORTNR)
   ETIMARTCLASSFEATUREVALUEMAP (ARTCLASSFEATUREVALUENR, ARTCLASSFEATURENR, VALUEID, SORTNR)
 
-Weicht das echte Release ab: `python -m etim inspect data/etim` zeigt Dateien + Spalten,
+Zwei Eigenheiten des echten Release, auf die die 6-Klassen-Fixture nicht stößt:
+Die Dateien sind UTF-16LE **ohne BOM** (siehe _decode), und die Beschreibungsspalten
+tragen **kein** Sprachsuffix — ARTCLASSDESC, nicht ARTCLASSDESC_EN. Beide Schreibweisen
+stehen in COLUMN_ALIASES, damit sprachspezifische Releases weiter laden.
+
+Weicht ein Release ab: `python -m etim inspect data/etim` zeigt Dateien + Spalten,
 dann TABLE_ALIASES / COLUMN_ALIASES unten anpassen. Alles landet in data/cache/etim.sqlite.
 """
 from __future__ import annotations
@@ -29,7 +35,16 @@ from . import config
 TABLE_ALIASES = {
     "group": ["etimartgroup", "artgroup", "group", "groups"],
     "class": ["etimartclass", "artclass", "class", "classes"],
-    "synonym": ["etimsynonym_en", "etimsynonym", "synonym", "synonyms", "etimartclasssynonym"],
+    "synonym": [
+        "etimartclasssynonymmap",
+        "artclasssynonymmap",
+        "classsynonymmap",
+        "etimsynonym_en",
+        "etimsynonym",
+        "synonym",
+        "synonyms",
+        "etimartclasssynonym",
+    ],
     "feature": ["etimfeature", "feature", "features"],
     "unit": ["etimunit", "unit", "units"],
     "value": ["etimvalue", "value", "values"],
@@ -99,14 +114,31 @@ def _delimiter(text: str) -> str:
         return ";"
 
 
-def read_csv(path: Path) -> tuple[list[str], list[dict[str, str]]]:
-    raw = path.read_bytes()
+def _decode(raw: bytes) -> str:
+    """Bytes des Releases dekodieren.
+
+    Der ETIM-10.0-CSV-Release ist UTF-16LE **ohne BOM**. Reines Durchprobieren
+    reicht dafuer nicht: UTF-8 akzeptiert die eingestreuten NUL-Bytes klaglos und
+    liefert Text, an dem erst das csv-Modul scheitert ("line contains NUL").
+    Deshalb zuerst BOM pruefen, dann auf NUL-Muster testen, erst danach die
+    Einbyte-Kandidaten.
+    """
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return raw.decode("utf-16")
+    head = raw[:4096]
+    if head.count(0) > len(head) // 4:
+        # jedes zweite Byte NUL -> Byte-Reihenfolge aus der Position der NULs ableiten
+        return raw.decode("utf-16-le" if head[1::2].count(0) >= head[0::2].count(0) else "utf-16-be")
     for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
         try:
-            text = raw.decode(enc)
-            break
+            return raw.decode(enc)
         except UnicodeDecodeError:
             continue
+    return raw.decode("latin-1", "replace")
+
+
+def read_csv(path: Path) -> tuple[list[str], list[dict[str, str]]]:
+    text = _decode(path.read_bytes())
     reader = csv.DictReader(io.StringIO(text), delimiter=_delimiter(text))
     rows = [dict(r) for r in reader]
     return list(reader.fieldnames or []), rows

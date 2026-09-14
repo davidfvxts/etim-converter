@@ -54,21 +54,36 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
 
 ## Stand / Nächste Schritte (aktualisiere diesen Block nach jeder Session)
 
-- [ ] **BLOCKER: echte ETIM-Daten fehlen weiterhin.** `scripts/download_etim.sh` scheitert in der
-      Remote-Umgebung an der Egress-Policy, nicht am Server: `curl -sS "$HTTPS_PROXY/__agentproxy/status"`
-      meldet für alle fünf Dateien `connect_rejected` / "gateway answered 403 to CONNECT
-      (policy denial)". Der TLS-Tunnel kommt also gar nicht erst zustande — die Domain
-      `www.etim-international.com` steht nach wie vor nicht in der Allowlist (auch nicht ohne
-      `www.`). Die Proxy-Doku (`/root/.ccr/README.md`) verbietet ausdrücklich, das zu umgehen.
-      **Nächster Schritt für David:** entweder die Domain in der Environment-Allowlist freischalten
-      (Session-Environment-Einstellungen) oder die ZIPs manuell nach `data/downloads/` legen —
-      `etim10-csv.zip` und `bmecat-guideline.zip` reichen; das Skript entpackt vorhandene ZIPs
-      auch ohne Download.
-      **Solange dieser Punkt offen ist, sind die vier folgenden Punkte technisch nicht bearbeitbar.**
-- [ ] Spaltennamen des echten Release bestätigen (`inspect`): `TABLE_ALIASES`/`COLUMN_ALIASES` in
-      `etim/model.py` sind bis heute nur gegen die handgebaute 6-Klassen-Fixture geprüft.
-- [ ] `load-model` gegen den echten Release (~5.500 Klassen statt 6). Achtung: ~5.500 Embedding-Calls,
-      auf dem Free Tier vermutlich nicht durchführbar.
+- [x] **Echte ETIM-Daten liegen vor** (14.9.2026). Der Blocker war reine Netz-Policy, nicht der
+      Server: `www.etim-international.com` liefert sowohl in der Remote-Umgebung als auch im
+      lokalen Geräte-Shell 403 auf CONNECT. Beschafft wurden die beiden nötigen ZIPs deshalb
+      über den Browser (läuft nicht über den Agent-Proxy) und nach `data/downloads/` gelegt;
+      `scripts/download_etim.sh` entpackt vorhandene ZIPs auch ohne Download. Release:
+      `ETIM-10.0-ALL-SECTORS-CSV-METRIC-EI-2024-12-05.zip` (2,9 MB) + `ETIM-BMEcat-Guideline-V5-0-2`
+      (3,2 MB). **Die drei übrigen ZIPs (IXF, IXF-Format, xChange 2.0) fehlen weiterhin** — für
+      die aktuelle Pipeline nicht nötig.
+      **URL-Änderung:** die BMEcat-Guideline liegt unter `/wp-content/uploads/2021/09/`, nicht
+      unter `/2024/12/` — im Skript korrigiert. Die vier anderen URLs sind unverändert gültig
+      (per HEAD aus dem Browser geprüft: CSV-ZIP 200).
+- [x] **Spaltennamen des echten Release bestätigt** (`inspect`, 14.9.2026). Zwei Abweichungen
+      gegenüber der 6-Klassen-Fixture, beide in `etim/model.py` behoben:
+      1. **Encoding:** der Release ist **UTF-16LE ohne BOM**. Die alte Decoder-Kette lief auf
+         UTF-8 durch (NUL-Bytes sind gültiges UTF-8), alle neun Dateien meldeten
+         "line contains NUL". Neu: `_decode()` prüft BOM, dann das NUL-Muster, dann die
+         Einbyte-Kandidaten.
+      2. **Tabellenname:** die Synonyme heißen `ETIMARTCLASSSYNONYMMAP.csv`, nicht
+         `ETIMSYNONYM_EN` — Alias ergänzt. Ohne ihn wurden 37.058 Synonyme still ignoriert,
+         was das Retrieval spürbar verschlechtert hätte.
+      **Nicht abgewichen:** alle `COLUMN_ALIASES` trafen auf Anhieb. Die Beschreibungsspalten
+      tragen kein Sprachsuffix (`ARTCLASSDESC`, nicht `ARTCLASSDESC_EN`); beide Schreibweisen
+      standen bereits in den Aliaslisten. Ungenutzt bleibt `ETIMFEATUREGROUP.csv`.
+- [x] **`load-model --no-embed` gegen den echten Release durchgelaufen** (14.9.2026):
+      groups=159, classes=**5.640**, synonyms=37.058, features=17.377, units=188, values=16.163,
+      class_features=76.625, class_feature_values=201.284. Deckt sich mit der Erwartung (~5.500).
+- [ ] **Embedding-Lauf steht noch aus** — 5.640 Embedding-Calls. Blockiert am fehlenden
+      `GEMINI_API_KEY` (frischer Checkout hat keine `.env`). Sobald der Key in `.env` steht:
+      `python -m etim load-model data/etim`. Auf dem Free Tier voraussichtlich nicht
+      durchführbar; dann Billing aktivieren statt auf ein schwächeres Modell auszuweichen.
 - [ ] **Retrieval messen (wichtigste offene Frage).** Bei 6 Fixture-Klassen ist Top-20 die ganze
       Liste, Retrieval wird also nie geprüft. Bei ~5.500 Klassen entscheidet sich hier alles:
       landet die richtige Klasse nicht in den Top-20, kann kein nachgelagertes Modell das
@@ -78,8 +93,9 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
       Artikeln (Trefferquote, Laufzeit, Kosten je Artikel). Gegen die Fixture waren alle Modelle
       ununterscheidbar; die Guardrails in `features.py` (EV-Code-Whitelist, Quellzitat-Pflicht)
       tragen mehr als die Modellwahl.
-- [ ] BMEcat-XSD aus der Guideline-ZIP nach `data/schema/` → `validate` mit echter XSD-Prüfung
-      statt nur Strukturregeln. Hängt am selben Download.
+- [ ] BMEcat-XSD → `validate` mit echter XSD-Prüfung statt nur Strukturregeln. Der Download
+      hängt nicht mehr: `data/schema/bmecat_etim_501.xsd` liegt vor (dazu vier ETIM-7/8/9/10-
+      Beispielkataloge und die Guideline als PDF). Nur noch in `validate` einhängen.
 - [x] **Review-Lücke geschlossen** (Geschäftsentscheidung von David, 4.9.2026: Abdeckungsschwelle).
       `ETIM_MIN_COVERAGE` (Default 0.30): ein Artikel geht in die Review-Queue, wenn weniger als
       30 % seiner Klassen-Merkmale befüllt sind — das fängt den 0-Merkmale-Fall (GE-RS-20) und
