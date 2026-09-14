@@ -9,3 +9,6 @@ out/
 *.pyc
 web/preview.html
 web/preview.body.html
+
+# Test- und Kundenkataloge: gehoeren nie ins Repo (Kundendaten, Binaergroesse)
+*.pdf

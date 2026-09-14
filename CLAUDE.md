@@ -124,6 +124,48 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
       taugt als Freigabe fuer die Architektur, nicht als Qualitaetsversprechen an Kunden.
       `TOP_K_CLASSES` bleibt bei 20: R@10 war zwar ebenfalls 100 %, aber auf dieser
       Stichprobengroesse waere das Sparen am Kontext die falsche Optimierung.
+- [ ] **ERNUECHTERUNG: erster echter Katalog zeigt, dass die Retrieval-Messung zu optimistisch war.**
+      Trockenlauf 14.9.2026 gegen `Preisliste2025_Waermegruppen` von strawa (6 Seiten, 17 Artikel,
+      Kapitel-Preisliste — genau das Format, das ein Hersteller schickt).
+      **`ingest` war stark:** 17 Artikel, Variantenzeilen korrekt in einzelne Artikelnummern
+      aufgeloest (dasselbe Produkt in vier Pumpen-Varianten), Preise und Einbauhoehen mitgenommen,
+      Notizen melden Dublette und Leerseiten von selbst. Keine Nacharbeit noetig.
+      **`classify` ist der Engpass:** 13 von 17 Artikeln → `class_id = null`, also nicht
+      klassifiziert. Ursachen, in dieser Reihenfolge:
+      1. **Retrieval-Fehler, nicht ETIM-Luecke.** Die richtige Klasse ist EC004089
+         "Hydronic control station" — sie traegt ausdruecklich das Synonym **"Pump group"**.
+         Sie landete aber nur bei **3 von 17** Artikeln in den Top-20 (Raenge 11, 16, 19), und
+         genau bei diesen dreien hat das Modell sie auch korrekt gewaehlt. Bei den uebrigen 14
+         konnte es sie gar nicht waehlen — `null` war dort das richtige Verhalten.
+      2. **Warum das Testset das nicht gefunden hat:** `retrieval_eval.json` benutzt generische
+         Produktnamen (Kugelhahn, Kabelbinder, Umwaelzpumpe), die sauber ins Englische mappen.
+         Echte Kataloge benutzen **Hausabkuerzungen** ("FBR-Regelgruppe 130/6", "FBM-Mischgruppe")
+         plus Komponentenrauschen im Namen ("mit Grundfos UPM3 Auto 15-50 130"). Beides kennt
+         das Embedding nicht. **R@20 = 100 % gilt nur fuer generische Bezeichnungen.**
+      3. **Das Modell erfindet EC-Codes in der Begruendung.** Zur Rechtfertigung von `null` nannte
+         es EC011310, EC011246, EC011270, EC011609, EC011299, EC010091 als "die eigentlich
+         passende Klasse". Tatsaechlich sind das: Three-way control valve, Sound-absorbing roof
+         duct, Solid rubber plate, **Bath**, Single-walled flue gas pipe — und EC010091 existiert
+         gar nicht. Gefaehrlich, weil es wie ein ETIM-Befund aussieht.
+      4. **Identische Produkte bekommen verschiedene Antworten.** Die vier Varianten derselben
+         Regelgruppe (nur andere Pumpenmarke) wurden unterschiedlich klassifiziert. Fuer einen
+         Grosshaendler-Datencheck ist genau das der auffaelligste Fehler.
+      5. **Konfidenz bestaetigt sich als wertlos:** 0.90–0.95 auch bei `null`.
+      Gegenprobe: mit `ETIM_TOP_K=50` fanden 15 von 17 die Klasse im Kandidatenfeld, und von vier
+      getesteten Varianten wurden 3 statt 1 korrekt klassifiziert — die Inkonsistenz bleibt.
+- [ ] **Daraus die naechsten Schritte, in dieser Reihenfolge:**
+      1. **Varianten gruppieren.** Artikel mit gleichem Basisnamen (vor " mit ") einmal
+         klassifizieren, Ergebnis auf alle Varianten anwenden. Beseitigt die Inkonsistenz
+         deterministisch statt per Prompt und spart hier 4/5 der classify-Calls.
+      2. **EC-Codes in `reasoning` pruefen.** Jeden genannten Code gegen die Klassentabelle
+         validieren; unbekannte Codes entfernen oder markieren. Kein erfundener Befund darf
+         in einen Report an einen Hersteller geraten.
+      3. **Retrieval fuer Hausbezeichnungen haerten.** `TOP_K` auf 50 ist die billige Haelfte.
+         Die eigentliche Antwort ist wahrscheinlich ein Normalisierungsschritt: den Artikelnamen
+         vor dem Embedding auf einen generischen Produkttyp bringen (ein zusaetzlicher billiger
+         Call je Artikel) oder lexikalisches Matching auf die Synonymtabelle danebenlegen.
+      4. **Testset um echte Katalogartikel erweitern** — die 17 strawa-Artikel sind bereits ein
+         besserer Massstab als die 20 konstruierten. Ground Truth mit David klaeren.
 - [ ] **Naechste Ausbaustufe der Messung:** die bekannte Falle ist die Abgrenzung
       Hauptprodukt vs. "Accessories/spare parts for …" (ETIM hat davon eigene Klassen,
       siehe DECIDE_PROMPT). Das Testset enthaelt dazu noch keinen einzigen Fall. Vor dem
