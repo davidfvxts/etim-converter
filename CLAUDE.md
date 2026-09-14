@@ -80,16 +80,35 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
 - [x] **`load-model --no-embed` gegen den echten Release durchgelaufen** (14.9.2026):
       groups=159, classes=**5.640**, synonyms=37.058, features=17.377, units=188, values=16.163,
       class_features=76.625, class_feature_values=201.284. Deckt sich mit der Erwartung (~5.500).
-- [ ] **Embedding-Lauf steht noch aus — muss lokal laufen.** `generativelanguage.googleapis.com`
-      ist von derselben Egress-Policy blockiert wie `www.etim-international.com`: 403 auf CONNECT,
-      sowohl in der Cloud-Umgebung als auch im Geräte-Shell (`recentRelayFailures` nennt den Host
-      beim Namen). Die Policy ist von innen nicht umgehbar. **Der Lauf gehört deshalb in Davids
-      eigenes Terminal**, dort geht kein Proxy dazwischen:
-      `cd etim-converter && make setup && python -m etim load-model data/etim`
-      (5.640 Embedding-Calls, 3072 Dimensionen, ~57 Batch-Requests à 100).
-      Alternativ die beiden Domains in der Netzwerk-Policy der Session freischalten.
-      Der Key steht in `.env` (gitignored) und funktioniert — per Einzel-Call geprüft:
-      `gemini-embedding-2` 200/566 ms, `gemini-embedding-001` 200/318 ms, beide 3072 Dim.
+- [x] **Embedding-Lauf durchgelaufen** (14.9.2026, Cloud-Umgebung nach Freischaltung von
+      `generativelanguage.googleapis.com` in der Domain-Allowlist): **(5640, 3072)**, ~2:45 min,
+      Kosten im Cent-Bereich (474k Tokens). Cache: `data/cache/class_emb.npz` (69 MB) +
+      `etim.sqlite` (18 MB) — beide gitignored und zu gross fuer den Geraete-Transfer,
+      lokal mit `python -m etim load-model data/etim` in Minuten neu gebaut.
+- [x] **Stiller Embedding-Bug gefunden und behoben — der wichtigste Fund dieser Session.**
+      `llm.embed()` uebergab `contents=[str, str, ...]`. Die API liest das als **einen** Content
+      mit mehreren Parts und liefert **ein** Embedding pro Request. Ergebnis war eine Matrix
+      `(57, 3072)` — 57 = Anzahl Batches — statt `(5640, 3072)`. Nichts davon wirft einen Fehler:
+      `classify.candidates_for` haette `sims` mit 57 Spalten gebildet und `ids[i]` auf die
+      **ersten 57 Klassen** abgebildet, also jedem Artikel eine falsche Klasse gegeben. Bei
+      `candidates_for` waere zusaetzlich die Produktliste stillschweigend auf einen Artikel je
+      Batch zusammengefallen. Fix: jeder Text bekommt ein eigenes Content-Objekt, plus zwei
+      Guards (Vektoranzahl == Textanzahl in `embed`, Zeilenzahl == Klassenanzahl beim
+      Cache-Laden in `_class_matrix`). **Konsequenz fuer die Notiz weiter unten:** der als
+      erfolgreich vermerkte Fixture-Lauf (4/4 korrekt) ist damit fraglich — bei 6 Klassen in
+      einem Batch kann er nur einen Kandidaten gesehen haben. Vor Kundeneinsatz neu messen.
+- [x] **Rate Limit verstanden und gedrosselt.** Das Embed-Kontingent zaehlt **jeden Text** als
+      Request, nicht jeden HTTP-Aufruf: Paid Tier 3.000/min
+      (`EmbedContentPerMinutePerProjectPerUserPerModel`). 5.640 Klassen am Stueck laufen nach
+      Sekunden in 429. `llm.py` hat jetzt ein Token-Bucket ueber die Texte
+      (`ETIM_EMBED_TEXTS_PER_MIN`, Default 2500) und respektiert die vom Server genannte
+      Wartezeit. Free Tier war nie das Problem — Billing ist seit 14.9.2026 aktiv.
+- [ ] **Erste echte Retrieval-Stichprobe** (5 Anfragen gegen alle 5.640 Klassen, Top-3):
+      Umwaelzpumpe, Kabelbinder und Heizkoerperventil sauber auf Platz 1. Kugelhahn landete auf
+      **Platz 2** hinter "Gas valve", LED-Panel gar nicht in den Top-3 ("Pendant luminaire" vorn).
+      Lesart: **Top-1 ist nicht verlaesslich, Top-20 (der Pipeline-Wert) sehr wahrscheinlich schon.**
+      Das stuetzt die bestehende Architektur — Retrieval breit, Entscheidung beim LLM. Die
+      geplante Recall@5/@20-Messung bleibt trotzdem der naechste inhaltliche Schritt.
 - [x] **Modelle auf den neuesten Stand gesetzt** (14.9.2026, Entscheidung David: neuestes und
       effizientestes Modell). Modellliste live gegen die API geprüft:
       `GEMINI_MODEL=gemini-3.8-flash` (neuestes Flash; darüber liegt nur noch

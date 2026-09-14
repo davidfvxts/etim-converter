@@ -39,7 +39,9 @@ def _class_matrix(model: EtimModel) -> tuple[list[str], np.ndarray]:
     ids = [r["id"] for r in model.classes()]
     if cache.exists():
         z = np.load(cache, allow_pickle=True)
-        if list(z["ids"]) == ids and (config.DRY_RUN == bool(z["dry"])):
+        # Zeilenzahl mitpruefen: ein Cache aus einem fehlerhaften Lauf haette sonst
+        # stillschweigend falsche Klassen geliefert (siehe llm.embed).
+        if list(z["ids"]) == ids and (config.DRY_RUN == bool(z["dry"])) and z["emb"].shape[0] == len(ids):
             return ids, z["emb"]
     print(f"Embeddings für {len(ids)} Klassen berechnen …")
     texts = [model.class_text(i) for i in ids]

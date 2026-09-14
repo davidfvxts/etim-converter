@@ -150,6 +150,54 @@ def generate_json(
     raise RuntimeError(f"LLM-Aufruf '{name}' fehlgeschlagen nach {retries} Versuchen: {last_err}")
 
 
+# Das Embed-Kontingent zaehlt jeden Text als eigenen Request, nicht jeden
+# HTTP-Aufruf: 5.640 Klassen laufen sonst nach wenigen Sekunden in 429
+# (EmbedContentPerMinutePerProjectPerUserPerModel, Paid Tier: 3.000/min).
+# Darum ein Token-Bucket ueber die Texte und Respektieren der Server-Wartezeit.
+EMBED_TEXTS_PER_MIN = int(__import__("os").getenv("ETIM_EMBED_TEXTS_PER_MIN", "2500"))
+_embed_window: list[float] = []
+
+
+def _embed_throttle(n: int) -> None:
+    now = time.monotonic()
+    _embed_window[:] = [t for t in _embed_window if now - t < 60.0]
+    if len(_embed_window) + n > EMBED_TEXTS_PER_MIN and _embed_window:
+        wait = 60.0 - (now - _embed_window[0]) + 0.5
+        if wait > 0:
+            print(f"    embed: Rate-Limit-Puffer, warte {wait:.0f}s")
+            time.sleep(wait)
+            now = time.monotonic()
+            _embed_window[:] = [t for t in _embed_window if now - t < 60.0]
+    _embed_window.extend([now] * n)
+
+
+def _embed_chunk(client, chunk: list[str], retries: int = 6):
+    """Einen Batch einbetten. Jeder Text braucht ein eigenes Content-Objekt.
+
+    Eine blosse Liste von Strings liest die API als EINEN Content mit mehreren
+    Parts und liefert dafuer genau ein Embedding — der Fehler wirft nichts, er
+    kommt als Matrix mit Batch-Anzahl statt Text-Anzahl zurueck und verschiebt
+    spaeter jede Klassenzuordnung. Die Pruefung steht in embed().
+    """
+    contents = [{"parts": [{"text": t}]} for t in chunk]
+    last = None
+    for attempt in range(retries):
+        _embed_throttle(len(chunk))
+        try:
+            return client.models.embed_content(model=config.GEMINI_EMBED_MODEL, contents=contents)
+        except Exception as e:  # noqa: BLE001
+            last = e
+            if _status_code(e) != 429 and not _is_transient(e):
+                raise
+            if attempt == retries - 1:
+                break
+            delay = _server_retry_delay(e) or min(2 ** attempt, 30) * (1 + random.random())
+            print(f"    embed: {_err_label(e)}, neuer Versuch in {delay:.0f}s ({attempt + 1}/{retries - 1})")
+            time.sleep(delay)
+            _embed_window.clear()
+    raise RuntimeError(f"Embedding fehlgeschlagen nach {retries} Versuchen: {last}")
+
+
 def embed(texts: Sequence[str], batch: int = 100) -> np.ndarray:
     if config.DRY_RUN:
         # deterministisches Hash-Embedding, reicht für Tests
@@ -168,8 +216,15 @@ def embed(texts: Sequence[str], batch: int = 100) -> np.ndarray:
     out: list[np.ndarray] = []
     for i in range(0, len(texts), batch):
         chunk = list(texts[i : i + batch])
-        resp = client.models.embed_content(model=config.GEMINI_EMBED_MODEL, contents=chunk)
-        arr = np.array([e.values for e in resp.embeddings], dtype=np.float32)
-        out.append(arr)
+        resp = _embed_chunk(client, chunk)
+        if len(resp.embeddings) != len(chunk):
+            raise RuntimeError(
+                f"Embedding-API lieferte {len(resp.embeddings)} Vektoren für {len(chunk)} Texte "
+                f"(Modell {config.GEMINI_EMBED_MODEL}). Abbruch — stillschweigend weiterzurechnen "
+                f"würde jede Klassenzuordnung verschieben."
+            )
+        out.append(np.array([e.values for e in resp.embeddings], dtype=np.float32))
     m = np.vstack(out)
+    if m.shape[0] != len(texts):
+        raise RuntimeError(f"Embedding-Matrix hat {m.shape[0]} Zeilen für {len(texts)} Texte.")
     return m / np.linalg.norm(m, axis=1, keepdims=True)
