@@ -153,19 +153,46 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
       5. **Konfidenz bestaetigt sich als wertlos:** 0.90–0.95 auch bei `null`.
       Gegenprobe: mit `ETIM_TOP_K=50` fanden 15 von 17 die Klasse im Kandidatenfeld, und von vier
       getesteten Varianten wurden 3 statt 1 korrekt klassifiziert — die Inkonsistenz bleibt.
-- [ ] **Daraus die naechsten Schritte, in dieser Reihenfolge:**
-      1. **Varianten gruppieren.** Artikel mit gleichem Basisnamen (vor " mit ") einmal
-         klassifizieren, Ergebnis auf alle Varianten anwenden. Beseitigt die Inkonsistenz
-         deterministisch statt per Prompt und spart hier 4/5 der classify-Calls.
-      2. **EC-Codes in `reasoning` pruefen.** Jeden genannten Code gegen die Klassentabelle
-         validieren; unbekannte Codes entfernen oder markieren. Kein erfundener Befund darf
-         in einen Report an einen Hersteller geraten.
-      3. **Retrieval fuer Hausbezeichnungen haerten.** `TOP_K` auf 50 ist die billige Haelfte.
-         Die eigentliche Antwort ist wahrscheinlich ein Normalisierungsschritt: den Artikelnamen
-         vor dem Embedding auf einen generischen Produkttyp bringen (ein zusaetzlicher billiger
-         Call je Artikel) oder lexikalisches Matching auf die Synonymtabelle danebenlegen.
-      4. **Testset um echte Katalogartikel erweitern** — die 17 strawa-Artikel sind bereits ein
-         besserer Massstab als die 20 konstruierten. Ground Truth mit David klaeren.
+- [x] **Schritt 1 gebaut: Varianten werden gruppiert** (14.9.2026, `etim/classify.py`).
+      `base_name()` schneidet alles ab dem ersten " mit " ab, `group_variants()` fasst
+      gleiche Basisnamen zusammen (normalisiert: Kleinschreibung, Mehrfach-Leerzeichen,
+      Satzzeichen am Ende), `representative()` schickt **den Basisnamen statt des
+      Katalognamens** in Query-Embedding *und* Prompt. Entschieden wird einmal je Gruppe,
+      das Ergebnis (Kandidaten, Entscheidung, needs_review) wird auf alle Varianten kopiert —
+      als eigene Objekte, nicht als geteilte Instanz. Neu in `ClassifiedProduct`:
+      `variant_group`, `variant_of`. Die Konsole nennt jede Mehrfachgruppe mit ihrer Klasse,
+      man sieht die Determinismusfrage also ohne Diff.
+      **Zweiter Effekt, absichtlich:** das Komponentenrauschen ("mit Grundfos UPM3 Auto
+      15-50 130") faellt damit auch aus dem Retrieval-Query — genau die Ursache Nr. 2 der
+      Ernuechterung oben. Das ist kein Prompt-Tuning, sondern eine Eingabekuerzung.
+- [x] **Schritt 2 gebaut: EC-Codes in `reasoning` werden geprueft**
+      (`check_reasoning_codes()`). Drei Faelle: (a) Code existiert nicht → `[existiert nicht
+      in ETIM-10.0]` dahinter, und wenn es der *gewaehlte* Code war, wird er auf `null`
+      gesetzt und die Konfidenz gedeckelt; (b) Code existiert, stand aber nicht in der
+      Kandidatenliste → seine **wirkliche** Beschreibung wird angehaengt, damit
+      `EC011609 ("Bath")` als das dasteht, was es ist; (c) Kandidat oder gewaehlte Klasse →
+      unveraendert. Ungueltige `runner_up` werden verworfen. Alle gefundenen Fantasiecodes
+      stehen in `ClassifiedProduct.invented_codes` und in der Schlusszeile der Konsole.
+      Das Pruef-Cockpit zeigt `decision.reasoning` direkt an, der Hinweis erreicht also
+      den Menschen, der freigibt.
+- [ ] **Noch nicht gemessen: der Gegenlauf gegen `out/strawa` steht aus.** Er konnte in der
+      Cloud-Session nicht laufen — `data/etim/`, `data/cache/`, `out/` und die Katalog-PDF
+      sind gitignored und liegen nur auf Davids Geraet, und dort ist auch der API-Key.
+      Lokal reproduzieren (die Konsole beantwortet beide Fragen direkt):
+      `python -m etim load-model data/etim` (einmalig), dann
+      `ETIM_TOP_K=50 python -m etim classify --job strawa`.
+      Vorher `out/strawa/classified.json` als `classified.vorher.json` wegkopieren.
+      Zu vergleichen: Zahl der Artikel mit Klasse (vorher 4/17), ob die vier Varianten der
+      Regelgruppe jetzt in einer Gruppe stehen, und ob `ETIM_TOP_K=50` gegenueber 20
+      ueberhaupt noch etwas aendert, wenn der Basisname statt des Variantennamens abgefragt wird.
+- [ ] **Schritt 3: Retrieval fuer Hausbezeichnungen haerten.** `TOP_K` auf 50 ist die billige
+      Haelfte. Die eigentliche Antwort ist wahrscheinlich ein Normalisierungsschritt: den
+      Artikelnamen vor dem Embedding auf einen generischen Produkttyp bringen (ein zusaetzlicher
+      billiger Call je Artikel) oder lexikalisches Matching auf die Synonymtabelle danebenlegen.
+      Die Variantengruppierung nimmt davon bereits ein Stueck vorweg (Komponentenrauschen weg),
+      aber "FBR-Regelgruppe" bleibt fuer das Embedding eine Hausabkuerzung.
+- [ ] **Schritt 4: Testset um echte Katalogartikel erweitern** — die 17 strawa-Artikel sind
+      bereits ein besserer Massstab als die 20 konstruierten. Ground Truth mit David klaeren.
 - [ ] **Naechste Ausbaustufe der Messung:** die bekannte Falle ist die Abgrenzung
       Hauptprodukt vs. "Accessories/spare parts for …" (ETIM hat davon eigene Klassen,
       siehe DECIDE_PROMPT). Das Testset enthaelt dazu noch keinen einzigen Fall. Vor dem

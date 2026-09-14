@@ -44,6 +44,18 @@ class ClassifiedProduct(BaseModel):
     candidates: list[ClassCandidate]
     decision: ClassDecision
     needs_review: bool = False
+    # Varianten-Gruppierung (classify.py): Artikel mit gleichem Basisnamen werden
+    # einmal klassifiziert, damit dasselbe Produkt nicht je nach verbauter
+    # Komponente in einer anderen ETIM-Klasse landet.
+    variant_group: Optional[str] = Field(
+        default=None, description="Normalisierter Basisname, wenn der Artikel zu einer Variantengruppe gehoert"
+    )
+    variant_of: Optional[str] = Field(
+        default=None, description="supplier_pid des stellvertretend klassifizierten Artikels; null beim Stellvertreter selbst"
+    )
+    invented_codes: list[str] = Field(
+        default_factory=list, description="EC-Codes aus der LLM-Antwort, die es in der ETIM-Klassentabelle nicht gibt"
+    )
 
 
 class FeatureValue(BaseModel):
