@@ -173,6 +173,13 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
       Wahrscheinlichkeitsverteilung gebauter Satz; erfundene EC-Codes kann er nicht
       enthalten, weil nur Optionen aus dem Kandidatenfeld vorkommen.
       Tests: **48 statt 45**, inklusive Jev-Ausfall waehrend eines echten Klassifizierungslaufs.
+- [x] **Cockpit lieferte nach einem `git pull` die alte Oberflaeche aus** (21.9.2026).
+      David meldete "Jev pruefen funktioniert nicht" — der Knopf war nach dem Pull schlicht
+      nicht da. Ursache: `SimpleHTTPRequestHandler` schickt nur `Last-Modified` und kein
+      `Cache-Control`. Browser leiten daraus eine eigene Haltbarkeit ab (Safari besonders
+      grosszuegig) und liefern `app.js` aus dem Cache, ohne nachzufragen — neue Knoepfe fehlen
+      dann ohne jede Fehlermeldung. `end_headers()` setzt jetzt `no-store, must-revalidate`
+      fuer alles, statisch wie JSON; auf 127.0.0.1 bringt Zwischenspeichern ohnehin nichts.
 - [x] **Weg ohne Terminal** (21.9.2026, Wunsch von David). Auf die Frage, ob sich das Dashboard
       ueber die Worker-URL bedienen laesst: **nein, und das ist auch nicht der richtige Weg** —
       die Pipeline braucht je ETIM-Version ~69 MB Embeddings und ~18 MB SQLite, numpy fuer das

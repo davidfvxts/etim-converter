@@ -322,6 +322,18 @@ class Handler(SimpleHTTPRequestHandler):
             json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         return self._json({"saved": len(data)})
 
+    def end_headers(self):
+        """Nichts zwischenspeichern lassen — gilt fuer statische Dateien und JSON.
+
+        Ohne Cache-Control schickt der Server nur Last-Modified. Browser leiten
+        daraus eine eigene Haltbarkeit ab (Safari besonders grosszuegig) und
+        liefern nach einem `git pull` weiter die alte Oberflaeche aus — neue
+        Knoepfe fehlen dann einfach, ohne jede Fehlermeldung. Auf 127.0.0.1
+        bringt Zwischenspeichern ohnehin nichts.
+        """
+        self.send_header("Cache-Control", "no-store, must-revalidate")
+        super().end_headers()
+
     def log_message(self, fmt, *args):  # Zugriffe nicht ins Terminal spülen
         pass
 
