@@ -86,19 +86,33 @@ def _class_matrix(model: EtimModel) -> tuple[list[str], np.ndarray]:
 #
 # Deutsch und englisch gleichermassen: Herstellerlisten kommen in beiden Sprachen,
 # und die Trennung darf nicht an der Katalogsprache haengen (CLAUDE.md, DE/EN).
-_VARIANT_SPLIT = re.compile(r"\s+(?:mit|with)\s+", re.IGNORECASE)
+#
+# Diese Definition ist die einzige im Projekt. compare.py hatte bis 21.9.2026 eine
+# zweite, die bereits abwich (sie trennte zusaetzlich bei "inkl."): der Vergleich
+# haette also eine andere Gruppierung gemessen als die Pipeline benutzt. Die
+# reichere Trennerliste ist uebernommen, compare importiert jetzt von hier.
+_VARIANT_SPLIT = re.compile(r"\s+(?:mit|inkl\.?|inklusive|with|incl\.?|including)\s+", re.IGNORECASE)
 
 
 def base_name(name: str) -> str:
-    """Der Produkttyp ohne die verbaute Komponente: alles vor dem ersten ' mit '/' with '."""
+    """Der Produkttyp ohne die verbaute Komponente: alles vor dem ersten Trenner.
+
+    Schreibweise bleibt erhalten — dieser Name geht so in Prompt und Query-Embedding.
+    Als Gruppenschluessel dient normalized_base().
+    """
     head = _VARIANT_SPLIT.split(name, maxsplit=1)[0]
     head = head.strip(" ,;:-–—\t")
     # Zu kurz heisst: das Trennwort stand am Anfang und trennt hier keine Variante ab.
     return head if len(head) >= 3 else name.strip()
 
 
+def normalized_base(name: str) -> str:
+    """Basisname als Gruppenschluessel: klein, einfache Leerzeichen."""
+    return re.sub(r"\s+", " ", base_name(name)).strip().lower()
+
+
 def variant_key(p: Product) -> str:
-    return re.sub(r"\s+", " ", base_name(p.name)).strip().lower()
+    return normalized_base(p.name)
 
 
 def group_variants(products: list[Product]) -> list[tuple[str, list[int]]]:
@@ -401,6 +415,37 @@ def decide_jev(model: EtimModel, p: Product, cands: list[ClassCandidate]) -> tup
                          reasoning=why, runner_up=a.runner_up), a
 
 
+def _apply_group_decision(rows: list[ClassifiedProduct]) -> list[ClassifiedProduct]:
+    """Innerhalb einer Variantengruppe die Entscheidung des ersten Artikels durchsetzen.
+
+    Fuer den Weg, der die Artikel einzeln gefragt hat (Vergleichslauf). Die
+    Einzelantworten bleiben in compare.json erhalten; hier geht es nur darum, dass
+    die Lieferdatei nicht baugleiche Artikel in verschiedene Klassen schreibt.
+    """
+    erste: dict[str, ClassifiedProduct] = {}
+    for r in rows:
+        erste.setdefault(variant_key(r.product), r)
+    zahl = {k: sum(1 for r in rows if variant_key(r.product) == k) for k in erste}
+    for r in rows:
+        key = variant_key(r.product)
+        if zahl[key] < 2:
+            continue
+        kopf = erste[key]
+        r.variant_group = key
+        r.variant_of = None if r is kopf else kopf.product.supplier_pid
+        if r is not kopf:
+            abweichend = r.decision.class_id != kopf.decision.class_id
+            r.decision = kopf.decision.model_copy(deep=True)
+            r.needs_review = kopf.needs_review
+            r.invented_codes = list(kopf.invented_codes)
+            if abweichend:
+                # Nicht verschweigen: die Modelle waren sich uneins, und genau das
+                # ist ein Pruefgrund — auch wenn die Gruppe jetzt einheitlich ist.
+                r.needs_review = True
+                erste[key].needs_review = True
+    return rows
+
+
 def run(out_dir: Path, model: EtimModel | None = None, *,
         classifier: str | None = None,
         progress: Callable[[str, int, int, str], None] | None = None,
@@ -435,6 +480,11 @@ def run(out_dir: Path, model: EtimModel | None = None, *,
                 needs_review=_review_flag(model, d, cands),
                 model="gemini", etim_version=model.version, simulated=a.simulated,
                 invented_codes=invented))
+        # Der Vergleich fragt jeden Artikel einzeln — genau das misst er ja:
+        # ob ein Modell baugleiche Artikel von sich aus gleich einordnet. Fuer die
+        # Lieferdatei gilt trotzdem die Zusage "eine Klasse je Produkttyp", sonst
+        # haette ein both-Lauf andere Ergebnisse als ein gemini-Lauf.
+        result = _apply_group_decision(result)
         return _write(out_dir, result, "gemini (Vergleich in compare.json)")
 
     tick = progress or (lambda *_: None)

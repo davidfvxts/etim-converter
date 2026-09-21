@@ -271,3 +271,53 @@ def test_jev_error_does_not_break_the_run(model, tmp_path, monkeypatch):
     assert comp.metrics["gemini"].errors == 0, "Gemini läuft weiter"
     assert all("401" in it.answers["jev"].error for it in comp.items)
     assert all(it.answers["jev"].class_id is None for it in comp.items)
+
+
+def test_both_run_delivers_one_class_per_variant_group(model, tmp_path, monkeypatch):
+    """--model both fragt jeden Artikel einzeln (das misst es ja) — die Lieferdatei
+    bekommt trotzdem eine Klasse je Produkttyp, sonst waere sie schlechter als ein
+    reiner gemini-Lauf."""
+    from etim import classify, llm
+
+    out = tmp_path / "both"
+    out.mkdir()
+    (out / "products.json").write_text(json.dumps({"products": [
+        {"supplier_pid": "V-1", "name": "Rohrschelle 20-25 mit Pumpe X", "attributes": []},
+        {"supplier_pid": "V-2", "name": "Rohrschelle 20-25 mit Pumpe Y", "attributes": []},
+        {"supplier_pid": "E-1", "name": "Kugelhahn DN 20", "attributes": []},
+    ], "notes": ""}, ensure_ascii=False))
+
+    # Gemini antwortet je Artikel verschieden — genau der Fehler aus dem strawa-Lauf.
+    antworten = iter(["EC000001", "EC000003", "EC000003"])
+    inner = llm._fake_handlers["decide"]
+    llm.register_fake("decide", lambda p: {"class_id": next(antworten), "confidence": 0.95,
+                                           "reasoning": "fake", "runner_up": None})
+    try:
+        rows = classify.run(out, model, classifier="both", fresh=True)
+    finally:
+        llm.register_fake("decide", inner)
+
+    v = [r for r in rows if r.product.supplier_pid.startswith("V-")]
+    assert len({r.decision.class_id for r in v}) == 1, "Varianten muessen eine Klasse tragen"
+    assert v[0].decision.class_id == "EC000001", "die Entscheidung des ersten Artikels gilt"
+    assert [r.variant_of for r in v] == [None, "V-1"]
+    assert all(r.needs_review for r in v), "Uneinigkeit im Vergleich ist ein Pruefgrund"
+    # Der Vergleich selbst haelt die Einzelantworten fest, sonst misst er nichts mehr.
+    comp = json.loads((out / "compare.json").read_text())
+    einzeln = [i["answers"]["gemini"]["class_id"] for i in comp["items"] if i["product"]["supplier_pid"].startswith("V-")]
+    assert einzeln == ["EC000001", "EC000003"], "compare.json behaelt die ungeglaetteten Antworten"
+
+
+def test_base_name_has_one_definition():
+    """compare und classify duerfen nicht zwei Fassungen fuehren — sie liefen bereits
+    auseinander (compare trennte bei 'inkl.', classify nicht)."""
+    from etim import classify, compare
+
+    assert compare.base_name is classify.normalized_base
+    # Alle Trenner, die eine der beiden Fassungen kannte, gelten jetzt ueberall.
+    for n in ["Pumpe inkl. Dämmschale", "Pumpe inkl Dämmschale", "Pumpe inklusive Dämmschale",
+              "Pumpe mit Dämmschale"]:
+        assert compare.base_name(n) == "pumpe", n
+    for n in ["Pump with insulation", "Pump incl. insulation", "Pump including insulation"]:
+        assert compare.base_name(n) == "pump", n
+    assert classify.base_name("Pumpe inkl. Dämmschale") == "Pumpe"   # Schreibweise bleibt

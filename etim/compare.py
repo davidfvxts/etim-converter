@@ -29,7 +29,8 @@ EC_RE = re.compile(r"\bEC\d{6}\b")
 # Vergleich, und classify.run benutzt sie auch ohne dieses Modul. Hier nur
 # weitergereicht, damit der Vergleich mit denselben Bausteinen arbeitet.
 from .classify import (ACCESSORY_INSTRUCTIONS, CLASS_INSTRUCTIONS,  # noqa: E402
-                       NONE_OPTION, _tokens, ask_jev, class_criteria, product_state)
+                       NONE_OPTION, _tokens, ask_jev, class_criteria, normalized_base,
+                       product_state)
 
 # Bewusst weitergereicht: der Vergleich und seine Tests sprechen diese Bausteine
 # ueber compare an, auch wenn sie inzwischen in classify stehen.
@@ -38,17 +39,13 @@ REEXPORTED = (ACCESSORY_INSTRUCTIONS, CLASS_INSTRUCTIONS, class_criteria)
 
 # ------------------------------------------------------------------ Hilfsteile
 
-def base_name(name: str) -> str:
-    """Bezeichnung ohne Variantenteil.
-
-    Kundenkataloge haengen die Variante an den Grundtyp: "FBR-Regelgruppe 130/6
-    mit Grundfos UPM3 Auto 15-50". Alles ab dem Trenner ist die Variante; davor
-    steht dasselbe Produkt. Artikel mit gleichem Basisnamen muessen dieselbe
-    ETIM-Klasse bekommen — sonst faellt es beim Grosshaendler-Datencheck auf.
-    """
-    s = re.split(r"\s+(?:mit|inkl\.?|inklusive|with)\s+", name, maxsplit=1, flags=re.I)[0]
-    s = re.sub(r"[,;]\s*$", "", s)
-    return re.sub(r"\s+", " ", s).strip().lower()
+# Bezeichnung ohne Variantenteil. Kundenkataloge haengen die Variante an den
+# Grundtyp ("FBR-Regelgruppe 130/6 mit Grundfos UPM3 Auto 15-50"); Artikel mit
+# gleichem Basisnamen muessen dieselbe ETIM-Klasse bekommen, sonst faellt es beim
+# Grosshaendler-Datencheck auf. Die Definition steht in classify und wird hier nur
+# uebernommen: eine zweite Fassung hatte bereits andere Trenner, womit der
+# Vergleich eine andere Gruppierung gemessen haette als die Pipeline benutzt.
+base_name = normalized_base
 
 
 def reasoning_codes(model: EtimModel, text: str) -> list[ReasoningCode]:
