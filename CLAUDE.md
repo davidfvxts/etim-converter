@@ -123,6 +123,7 @@ make studio                     # Cockpit im Browser
 make compare JOB=strawa         # Gemini gegen Jev (nur Messung)
 python -m etim classify --job strawa --model jev   # Jev als Klassifizierer der Pipeline
 make reference JOB=strawa       # Gerüst für reference.json
+make testset JOB=lts30 SOL=data/testsets/LTS_Testset_30_LOESUNG.xlsx   # Klasse + Merkmale messen
 make test                       # pytest mit DRY_RUN (läuft ohne API-Key)
 python -m etim inspect data/etim           # zeigt, welche CSV-Dateien/Spalten da sind
 python -m etim load-model data/etim        # baut data/cache/etim.sqlite + Embeddings
@@ -140,6 +141,59 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
 ```
 
 ## Stand / Nächste Schritte (aktualisiere diesen Block nach jeder Session)
+
+- [ ] **LTS-Testlauf: vorbereitet, aber in der Remote-Session nicht messbar** (21.9.2026).
+      Protokoll: `docs/testlauf-lts.md`. Die Messung braucht ETIM-9.0-Daten, einen
+      GEMINI_API_KEY und Jev-Zugangsdaten sowie die vier Dateien in `data/testsets/`.
+      **Keines davon war im Container vorhanden**, und beide nötigen Hosts sind über den
+      Agent-Proxy gesperrt (`www.etim-international.com` und `api.cloudflare.com` je 403 auf
+      CONNECT; `generativelanguage.googleapis.com` ist erreichbar, aber ohne Schlüssel).
+      Es wurde **kein einziger API-Aufruf** abgesetzt — das 25-$-Budget ist unberührt.
+      Weitermachen geht lokal bei David (Befehle stehen im Protokoll) oder in der Cloud,
+      sobald Allowlist, Schlüssel und Testdateien da sind.
+- [x] **Der Patch ist eingespielt** (Spaltenzuordnung für Herstellerlisten, Jevs
+      Zubehörwiderspruch als Prüfsignal, `scripts/eval_testset.py` + `make testset`).
+      `git am` scheiterte am Konflikt in `classify.py` — der Patch stammt von vor
+      Checkpointing und Jev. Von Hand aufgelöst, beides behalten.
+      Die Spaltenzuordnung ist gegen eine synthetische Herstellerliste geprüft:
+      aus `Artikelnummer | GTIN | Typbezeichnung | Kurzbeschreibung | Langbeschreibung`
+      wird richtig Kurzbeschreibung → Name und Langbeschreibung → Beschreibung.
+- [x] **Varianten und erfundene Codes abgearbeitet** (die Arbeit lag ungemergt auf
+      `claude/etim-variants-ec-codes-8p2yud`). Nicht gemergt, sondern portiert: der Branch
+      hatte seitdem Jev, Checkpointing und `_review_flag` bekommen. Neu darüber hinaus:
+      gilt für Gemini **und** Jev, der Zwischenstand kennt die Gruppenzahl als Bedingung,
+      und englische Listen trennen genauso (`with`, `incl.`).
+- [x] **Drei stille Lücken gefunden und geschlossen — der eigentliche Ertrag dieser Session.**
+      1. **Wertelisten waren ab dem 61. Wert unerreichbar.** `_feature_lines` zeigte 60 Werte
+         und schrieb `… (+N)` dahinter. Das Modell konnte einen Code dahinter nicht nennen —
+         und hätte es ihn genannt, hätte ihn die EV-Prüfung als „nicht in Werteliste" verworfen.
+         Bei langen ETIM-Listen (Farben, Gewindearten, Normen) heißt das: der richtige Wert
+         existiert, kommt aber nie zur Sprache, und das Ergebnis sieht aus wie eine saubere
+         Fehlanzeige. Jetzt 150 (`ETIM_VALUES_PER_FEATURE`), die Kürzung steht im Prompt, und
+         gekürzte Merkmale, die leer blieben, werden mit genau dem verschwiegenen Rest noch
+         einmal gefragt — höchstens ein Zusatzaufruf je Artikel, nur wenn wirklich gekürzt wurde.
+      2. **Einheiten wurden erbeten, nie geprüft.** Neu `etim/units.py`: rechnet gegen das
+         Katalogzitat nach. Verworfen wird, was nachweislich falsch ist („2,5 m" als 2.5 in
+         einem mm-Merkmal, „3 inch" als 3). Nur in die Prüfung geht, was mehrdeutig ist —
+         1/2 Zoll Gewinde ist keine Länge von 12,7 mm. Bruchschreibweisen werden richtig
+         gelesen, sonst wäre aus „1/2 Zoll" eine 2 geworden.
+      3. **`base_name` gab es zweimal**, in `classify` und in `compare`, mit **verschiedenen
+         Trennern** (compare kannte „inkl.", classify nicht). Der Vergleich hätte seine
+         Variantenkonsistenz gegen eine andere Gruppierung gemessen als die Pipeline benutzt.
+         Eine Definition, compare importiert sie.
+- [x] **`--model both` liefert jetzt auch eine Klasse je Produkttyp.** Der Vergleich fragt
+      jeden Artikel einzeln — richtig so, das ist ja die Messung. Aber `classified.json` erbte
+      daraus widersprüchliche Klassen, ein both-Lauf wäre also schlechter gewesen als ein
+      gemini-Lauf. `compare.json` behält die ungeglätteten Antworten, sonst misst es nichts mehr.
+- [x] **Kein erfundener EC-, EF- oder EV-Code erreicht Report oder Export.** Drei Stufen:
+      `classify` prüft EC-Codes in der Begründung, `features` prüft EF- und EV-Codes gegen die
+      Klasse, und `export_bmecat` prüft noch einmal alles gegen die ETIM-Version des Jobs —
+      denn Freigaben aus dem Cockpit und Handkorrekturen gehen an den ersten beiden vorbei.
+      Ohne geladenes Modell exportiert die Pipeline weiter, sagt aber, dass sie nicht geprüft hat.
+- [ ] **Offen aus dem Auftrag, weil ohne Messung nicht beantwortbar:** ob die Kürzungsstufe des
+      Jev-Kandidatenfelds bei 254 Klassen trägt, die Kosten je Artikel für beide Modelle, und
+      die Empfehlung, welches Modell klassifiziert. Erwartung vorab in `docs/testlauf-lts.md`
+      festgehalten, damit hinterher nicht jedes Ergebnis passend erklärt wird.
 
 - [x] **Checkpointing, Start erst auf Klick, echter Fortschritt, Abbrechen** (21.9.2026, Wunsch
       von David nach dem 250-Artikel-Lauf). Die vier Dinge hängen zusammen: ein langer Lauf muss
@@ -560,8 +614,9 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
 - `etim/llm.py` — Gemini-Wrapper (JSON-Antworten mit Pydantic-Schema, Embeddings, DRY_RUN)
 - `etim/ingest.py` — PDF in Seitenblöcke, Gemini extrahiert Artikel
 - `etim/classify.py` — Retrieval + Entscheidung
-- `etim/features.py` — Merkmalsbefüllung
-- `etim/export_bmecat.py` — XML-Writer
+- `etim/features.py` — Merkmalsbefüllung (lange Wertelisten in zwei Schritten)
+- `etim/units.py` — Einheiten aus dem Katalogzitat gegen die ETIM-Einheit nachrechnen
+- `etim/export_bmecat.py` — XML-Writer; letzte Prüfung aller EC-/EF-/EV-Codes
 - `etim/validate.py` — XSD/Strukturprüfung
 - `etim/report.py` — Markdown-Report + Review-CSV
 - `etim/jev.py` — Jev-Wrapper (Choice/Score/Noul, Worker- oder Cloudflare-Transport, DRY_RUN)
@@ -573,5 +628,7 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
 - `web/` — Oberfläche. `assets/tokens.css` ist der einzige Ort für Farb-/Typo-/Rasterwerte,
   `assets/components.js` die Komponentenschicht. Kein Build, keine npm-Abhängigkeit.
 - `docs/cowork-prompt-etim-download.md` — Prompt für die lokale Cowork-Session (ETIM-Download)
+- `docs/testlauf-lts.md` — Protokoll des LTS-Testlaufs: Iterationen, Blocker, Abnahmetabelle
+- `scripts/eval_testset.py` — Pipeline gegen eine Lösungsdatei messen (`make testset`)
 - `etim/cli.py` — Befehle
 - `tests/` — läuft offline mit Mini-ETIM-Fixture
