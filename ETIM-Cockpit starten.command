@@ -1,10 +1,50 @@
 #!/usr/bin/env bash
 # Doppelklick im Finder startet das Prüf-Cockpit und öffnet den Browser.
 # Zum Beenden dieses Fenster schließen.
-cd "$(dirname "$0")"
+#
+# Die Datei darf auch woanders liegen (Schreibtisch, Dock): dann sucht sie das
+# Projekt an den üblichen Stellen, statt aufzugeben.
 
 printf '\033]0;ETIM-Cockpit\007'
 echo "ETIM-Pipeline · Prüf-Cockpit"
+echo
+
+# Ein gültiger Projektordner hat beides.
+ist_projekt() { [ -f "$1/Makefile" ] && [ -f "$1/etim/cli.py" ]; }
+
+PROJEKT="$(cd "$(dirname "$0")" && pwd)"
+if ! ist_projekt "$PROJEKT"; then
+  echo "Der Starter liegt nicht im Projektordner ($PROJEKT) — Projekt wird gesucht …"
+  GEFUNDEN=""
+  for k in "$HOME/Projekte/etim-converter" "$HOME/Projects/etim-converter" \
+           "$HOME/etim-converter" "$HOME/Documents/etim-converter" \
+           "$HOME/Developer/etim-converter" "$HOME/Desktop/etim-converter"; do
+    if ist_projekt "$k"; then GEFUNDEN="$k"; break; fi
+  done
+  if [ -z "$GEFUNDEN" ]; then
+    # Bewusst flach: eine Tiefensuche über das ganze Benutzerverzeichnis dauert zu lange.
+    while IFS= read -r k; do
+      if ist_projekt "$k"; then GEFUNDEN="$k"; break; fi
+    done < <(find "$HOME" -maxdepth 4 -type d -name "etim-converter" 2>/dev/null)
+  fi
+  if [ -z "$GEFUNDEN" ]; then
+    echo
+    echo "  Kein Projektordner gefunden."
+    echo "  Diese Datei gehört IN den Projektordner (dort, wo auch 'Makefile' liegt)."
+    echo "  Für einen Schnellzugriff nicht kopieren, sondern:"
+    echo "    · die Datei aus dem Projektordner ins Dock ziehen, oder"
+    echo "    · Rechtsklick → 'Alias erzeugen' und nur den Alias verschieben."
+    echo
+    echo "  Fenster kann geschlossen werden."
+    read -r _
+    exit 1
+  fi
+  echo "Gefunden: $GEFUNDEN"
+  echo "(Tipp: Diese Kopie löschen und stattdessen einen Alias oder Dock-Eintrag anlegen.)"
+  PROJEKT="$GEFUNDEN"
+fi
+
+cd "$PROJEKT"
 echo "$(pwd)"
 echo
 

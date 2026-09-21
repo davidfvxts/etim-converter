@@ -173,6 +173,14 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
       Wahrscheinlichkeitsverteilung gebauter Satz; erfundene EC-Codes kann er nicht
       enthalten, weil nur Optionen aus dem Kandidatenfeld vorkommen.
       Tests: **48 statt 45**, inklusive Jev-Ausfall waehrend eines echten Klassifizierungslaufs.
+- [x] **Starter funktioniert auch ausserhalb des Projektordners** (21.9.2026). David hat die
+      `.command`-Datei auf den Schreibtisch gelegt; `cd "$(dirname "$0")"` landete dort, und
+      `make setup` scheiterte mit "No rule to make target 'setup'" — eine Meldung, die nicht
+      im Entferntesten auf die Ursache zeigt. Der Starter prueft jetzt, ob neben ihm
+      `Makefile` und `etim/cli.py` liegen; wenn nicht, sucht er das Projekt an sechs ueblichen
+      Stellen und danach flach (`-maxdepth 4`) unter `$HOME`, nennt den Fund und weist darauf
+      hin, dass ein Alias oder Dock-Eintrag besser ist als eine Kopie. Findet er nichts, sagt
+      er das im Klartext statt mit einem make-Fehler. Beide Faelle durchgespielt.
 - [x] **"Unbekannte Route: /api/jev-check" nach einem `git pull`** (21.9.2026). Zweiter Teil
       desselben Problems: die Oberflaeche wird bei jedem Aufruf frisch von der Platte gelesen,
       der Python-Code aber nur beim Start. Nach einem Pull sieht David also neue Knoepfe an

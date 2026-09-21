@@ -56,6 +56,15 @@ Ohne API-Key: `make test` läuft die ganze Pipeline mit Fakes gegen die Mini-Fix
 ersten Mal die Arbeitsumgebung ein, startet das Cockpit und öffnet den Browser; läuft schon
 eins, öffnet er nur den Browser. Zum Beenden das Fenster schließen.
 
+Für den Schnellzugriff die Datei **nicht kopieren** — sie würde am neuen Ort kein Projekt
+finden. Stattdessen aus dem Projektordner **ins Dock ziehen** (rechter Bereich) oder per
+Rechtsklick → *Alias erzeugen* einen Alias anlegen und nur den verschieben. Liegt der Starter
+trotzdem woanders, sucht er das Projekt an den üblichen Stellen und sagt, was er gefunden hat.
+
+**Nach jedem `git pull` das Cockpit neu starten.** Die Oberfläche wird bei jedem Aufruf frisch
+gelesen, der Python-Code nur beim Start — sonst stehen neue Knöpfe an einem alten Server. Das
+Cockpit erkennt das und zeigt oben ein Warnband.
+
 Im Cockpit selbst geht dann der Rest: Katalog einspielen, Lauf starten, **fehlende ETIM-Version
 laden** (Knopf auf der Versionskarte — sucht das ZIP, entpackt, lädt, baut die Embeddings) und
 **Jev prüfen** (echter Mini-Aufruf, zeigt Modell, Laufzeit und Kosten oder den Fehlergrund).
