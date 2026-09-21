@@ -350,6 +350,27 @@ function JevBanner() {
   return null;
 }
 
+/** Antwortet Jev wirklich? Ein echter Mini-Aufruf, Bruchteil eines Cents. */
+function JevCheck() {
+  const c = state.jevCheck;
+  return el('div', { class: 'jevcheck' },
+    el('div', {},
+      el('div', { class: 'jevcheck__title' }, 'Antwortet Jev?'),
+      el('div', { class: 'jevcheck__hint' },
+        state.jev?.reason || 'Ein echter Mini-Aufruf mit zwei Optionen.')),
+    Button(c?.busy ? 'läuft …' : 'Jev prüfen', {
+      size: 'sm', iconName: 'scale', disabled: c?.busy || state.demo || null, onClick: checkJev,
+    }),
+    c && !c.busy ? el('div', { class: 'jevcheck__result' },
+      c.ok
+        ? el('div', {},
+            Badge(c.simulated ? 'simuliert' : 'antwortet', c.simulated ? 'warn' : 'ok', { dot: true }),
+            el('span', { class: 'faint' },
+              ` ${c.model} · ${c.latency_ms} ms · ${c.usage?.input_tokens ?? 0} Tokens`))
+        : el('pre', { class: 'run__error' }, c.error)) : null,
+  );
+}
+
 async function api(path, opts = {}) {
   const res = await fetch(path, opts);
   let data = null;
@@ -496,6 +517,46 @@ function ModelPicker() {
   );
 }
 
+async function checkJev() {
+  state.jevCheck = { busy: true };
+  render();
+  try {
+    state.jevCheck = await api('api/jev-check', { method: 'POST' });
+  } catch (e) {
+    state.jevCheck = { ok: false, error: e.message };
+  }
+  render();
+}
+
+async function loadEtim(version) {
+  try {
+    await api('api/load-etim', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ version }),
+    });
+    pollEtim(version);
+  } catch (e) {
+    state.etimRun = { state: 'error', error: e.message, message: `ETIM ${version}`, stages: [], log: [] };
+    render();
+  }
+}
+
+let etimTimer = null;
+function pollEtim(version) {
+  clearTimeout(etimTimer);
+  const step = async () => {
+    try {
+      const r = await api(`api/run?job=${encodeURIComponent('etim:' + version)}`);
+      state.etimRun = r;
+      render();
+      if (r.state === 'running') { etimTimer = setTimeout(step, 1500); return; }
+      await loadJobs();           // Versionsliste neu holen
+      render();
+    } catch { /* Verbindung weg — der nächste Klick zeigt es */ }
+  };
+  etimTimer = setTimeout(step, 600);
+}
+
 /** Gegen welche ETIM-Version wird klassifiziert? Nur einsatzbereite sind wählbar. */
 function EtimPicker() {
   const running = state.run?.state === 'running';
@@ -514,14 +575,18 @@ function EtimPicker() {
     }, el('span', { class: 'pick__title' }, v.label),
        el('span', { class: 'pick__sub' },
          v.ready ? (v.default ? 'geladen · Vorgabe' : 'geladen') : 'nicht geladen')))),
-    none
-      ? Note('Keine ETIM-Version ist geladen. Im Terminal: `make load-model` ' +
-             'bzw. `python -m etim load-model --etim 9.0` nach dem Entpacken des Release.', 'warn')
-      : (list.some(v => !v.ready)
-          ? el('p', { class: 'picker__note' },
-              'Ausgegraute Versionen fehlen auf der Platte. ' +
-              '`python -m etim versions` zeigt, was wo erwartet wird.')
-          : null),
+    list.some(v => !v.ready) ? el('div', { class: 'picker__todo' },
+      list.filter(v => !v.ready).map(v => el('div', { class: 'todo' },
+        el('div', {},
+          el('div', { class: 'todo__title' }, `${v.label} ist nicht geladen`),
+          el('div', { class: 'todo__hint' }, v.missing)),
+        Button(v.has_data ? 'Jetzt laden' : 'Archiv suchen und laden', {
+          size: 'sm', iconName: 'spark',
+          disabled: state.etimRun?.state === 'running' || null,
+          onClick: () => loadEtim(v.version),
+        }))),
+    ) : null,
+    RunProgress(state.etimRun),
   );
 }
 
@@ -557,6 +622,7 @@ function ViewCatalog() {
         state.busy ? el('p', { class: 'muted', style: 'margin-top:var(--s-5)' }, state.busy) : null,
       )),
       Card('Lauf für diesen Job', el('div', {},
+        JevCheck(),
         EtimPicker(),
         ModelPicker(),
         el('div', { class: 'opts' },

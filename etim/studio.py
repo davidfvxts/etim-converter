@@ -31,6 +31,7 @@ SOURCE_DIR = "source"
 
 # Ablauf eines Laufs, wie ihn das Dashboard anzeigt.
 STAGES = [
+    ("etim", "ETIM laden"),
     ("ingest", "Artikel extrahieren"),
     ("retrieval", "Retrieval"),
     ("gemini", "Gemini"),
@@ -39,6 +40,10 @@ STAGES = [
 ]
 
 LABELS = {"gemini": "Gemini", "jev": "Jev", "both": "Gemini und Jev"}
+
+# Schluessel fuer Laeufe, die zu keinem Job gehoeren (ETIM-Version laden).
+def etim_key(version: str) -> str:
+    return f"etim:{version}"
 
 
 class UploadError(ValueError):
@@ -219,7 +224,10 @@ class RunState:
     def as_dict(self) -> dict:
         return {
             "job": self.job, "kind": self.kind, "classifier": self.classifier,
-            "classifier_label": LABELS.get(self.classifier, self.classifier),
+            # Beim Laden einer ETIM-Version ist kein Modell beteiligt — dann auch
+            # keins anzeigen, sonst steht dort faelschlich "Gemini".
+            "classifier_label": "" if self.kind == "load-etim"
+                                else LABELS.get(self.classifier, self.classifier),
             "etim_version": self.etim_version,
             "state": self.state,
             "stage": self.stage, "stage_label": self.stage_label,
@@ -281,6 +289,65 @@ def start(job_dir: Path, *, kind: str = "compare", reuse_gemini: bool = False,
                                classifier, etim_version))
     t.start()
     return st.as_dict()
+
+
+def start_load_etim(version: str) -> dict:
+    """Eine ETIM-Version im Hintergrund laden — damit das nicht ins Terminal muss.
+
+    Laeuft ueber dieselbe Fortschrittsanzeige wie ein Vergleichslauf; der
+    Schluessel ist die Version, nicht ein Job.
+    """
+    from . import versions
+
+    v = versions.normalize(version)
+    if v not in versions.SUPPORTED:
+        raise UploadError(f"ETIM {v} wird nicht unterstuetzt.")
+    key = etim_key(v)
+    with _LOCK:
+        if active(key):
+            raise UploadError(f"ETIM {v} wird bereits geladen.")
+        st = RunState(job=key, kind="load-etim", etim_version=v,
+                      stages=["etim"],
+                      started=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                      stage="etim", stage_label=f"ETIM {v} laden",
+                      message=f"ETIM {v} wird geladen")
+        RUNS[key] = st
+
+    threading.Thread(target=_load_etim_worker, name=f"etim-load-{v}", daemon=True,
+                     args=(st, v)).start()
+    return st.as_dict()
+
+
+def _load_etim_worker(st: RunState, version: str) -> None:
+    from . import versions
+    from .classify import _class_matrix
+    from .model import EtimModel, build_sqlite
+
+    def say(text: str) -> None:
+        st.message = text
+        st.log.append(text)
+
+    try:
+        folder = versions.data_dir(version)
+        if not folder:
+            say(f"Archiv fuer ETIM {version} suchen …")
+            folder = versions.unpack(version)
+        say(f"CSV aus {folder.name} nach SQLite laden …")
+        build_sqlite(folder, versions.db_path(version), version)
+        model = EtimModel(versions.db_path(version), version)
+        counts = model.count()
+        say(f"{counts['classes']} Klassen geladen — Embeddings berechnen "
+            f"(dauert einige Minuten und kostet ein paar Cent) …")
+        ids, emb = _class_matrix(model)
+        st.state = "done"
+        say(f"ETIM {version} einsatzbereit: {len(ids)} Klassen, Embeddings {emb.shape}")
+    except BaseException as e:  # noqa: BLE001 — der Grund gehoert ins Dashboard
+        st.state = "error"
+        st.error = f"{type(e).__name__}: {e}"
+        st.log.append(st.error)
+        traceback.print_exc()
+    finally:
+        st.finished = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _worker(job_dir: Path, st: RunState, kind: str, reuse_gemini: bool,

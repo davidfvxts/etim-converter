@@ -50,6 +50,19 @@ Ohne API-Key: `make test` läuft die ganze Pipeline mit Fakes gegen die Mini-Fix
 | `source/` | der hochgeladene Katalog (Kundendaten, gitignored) |
 | `review.decisions.json` | Freigaben und Korrekturvermerke aus dem Prüf-Cockpit |
 
+## Ohne Terminal arbeiten
+
+**`ETIM-Cockpit starten.command`** im Projektordner doppelklicken. Der Starter richtet beim
+ersten Mal die Arbeitsumgebung ein, startet das Cockpit und öffnet den Browser; läuft schon
+eins, öffnet er nur den Browser. Zum Beenden das Fenster schließen.
+
+Im Cockpit selbst geht dann der Rest: Katalog einspielen, Lauf starten, **fehlende ETIM-Version
+laden** (Knopf auf der Versionskarte — sucht das ZIP, entpackt, lädt, baut die Embeddings) und
+**Jev prüfen** (echter Mini-Aufruf, zeigt Modell, Laufzeit und Kosten oder den Fehlergrund).
+
+Terminal braucht es nur noch für das Einrichten der Zugangsdaten (`make env`) und für
+`git pull`.
+
 ## Prüf-Cockpit
 
 `python -m etim studio` öffnet die Oberfläche unter http://127.0.0.1:8000 — Übersicht, Katalog,

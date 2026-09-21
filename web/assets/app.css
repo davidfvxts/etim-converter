@@ -239,3 +239,28 @@
 .picker__row--tight { grid-template-columns: repeat(3, minmax(0, 200px)); }
 .pick--sm { padding: var(--s-4) var(--s-5); }
 .pick--sm .pick__title { font-size: var(--fs-sm); }
+
+/* === Fehlende ETIM-Version direkt laden ================================= */
+.picker__todo { display: flex; flex-direction: column; gap: var(--s-4); margin-top: var(--s-5); }
+.todo {
+  display: flex; align-items: center; gap: var(--s-5);
+  padding: var(--s-4) var(--s-5);
+  border: 1px solid var(--warn-line); border-radius: var(--r-md); background: var(--warn-soft);
+}
+.todo__title { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--ink); }
+.todo__hint { margin-top: 2px; font-size: var(--fs-2xs); line-height: var(--lh-body); color: var(--ink-muted); }
+.todo .btn { margin-left: auto; flex: none; }
+
+/* === Jev-Probe aus der Oberfläche ======================================= */
+.jevcheck {
+  display: flex; align-items: center; gap: var(--s-5); flex-wrap: wrap;
+  padding: var(--s-4) var(--s-5); margin-bottom: var(--s-6);
+  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-sunken);
+}
+.jevcheck__title { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--ink); }
+.jevcheck__hint {
+  margin-top: 2px; font-size: var(--fs-2xs); color: var(--ink-muted);
+  max-width: 60ch; overflow-wrap: anywhere;
+}
+.jevcheck .btn { margin-left: auto; }
+.jevcheck__result { flex-basis: 100%; font-size: var(--fs-xs); }

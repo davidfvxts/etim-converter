@@ -214,8 +214,15 @@ class Handler(SimpleHTTPRequestHandler):
                     return self._fail(404, f"Job '{job_dir.name}' gibt es nicht.")
                 return self._json(payload(job_dir))
             if route == "/api/run":
-                state = studio.run_state(studio.safe_job(q.get("job", "") or self.default_job))
-                return self._json(state or {"state": "idle"})
+                job = q.get("job", "") or self.default_job
+                # Laeufe ohne Job (ETIM laden) tragen "etim:<version>" als Schluessel.
+                key = job if job.startswith("etim:") else studio.safe_job(job)
+                return self._json(studio.run_state(key) or {"state": "idle"})
+            if route == "/api/etim":
+                return self._json({"versions": versions.available(),
+                                   "default": versions.default(),
+                                   "runs": {v["version"]: studio.run_state(studio.etim_key(v["version"]))
+                                            for v in versions.available()}})
         except studio.UploadError as e:
             return self._fail(400, str(e))
         return self._fail(404, f"Unbekannte Route: {route}")
@@ -258,6 +265,12 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._upload()
             if route == "/api/run":
                 return self._start_run()
+            if route == "/api/load-etim":
+                data = json.loads(self._body(4_000) or b"{}")
+                return self._json(studio.start_load_etim(str(data.get("version") or "")), 202)
+            if route == "/api/jev-check":
+                self._body(4_000) if self.headers.get("Content-Length") else None
+                return self._json(jev.selftest())
             if route == "/api/decisions":
                 return self._decisions()
         except studio.UploadError as e:

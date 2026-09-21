@@ -173,6 +173,17 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
       Wahrscheinlichkeitsverteilung gebauter Satz; erfundene EC-Codes kann er nicht
       enthalten, weil nur Optionen aus dem Kandidatenfeld vorkommen.
       Tests: **48 statt 45**, inklusive Jev-Ausfall waehrend eines echten Klassifizierungslaufs.
+- [x] **Weg ohne Terminal** (21.9.2026, Wunsch von David). Auf die Frage, ob sich das Dashboard
+      ueber die Worker-URL bedienen laesst: **nein, und das ist auch nicht der richtige Weg** —
+      die Pipeline braucht je ETIM-Version ~69 MB Embeddings und ~18 MB SQLite, numpy fuer das
+      Retrieval, pypdf/lxml, und die hochgeladenen Kataloge sind Kundendaten, die laut
+      Projektregel lokal bleiben. Ein Worker hat ein Skriptlimit im einstelligen MB-Bereich und
+      laeuft JS/WASM. Was David eigentlich will — nicht mehr ins Terminal —, geht aber lokal:
+      `ETIM-Cockpit starten.command` zum Doppelklicken (richtet beim ersten Mal ein, startet,
+      oeffnet den Browser, erkennt ein bereits laufendes Cockpit), plus zwei neue Knoepfe im
+      Cockpit: **ETIM-Version laden** (sucht das ZIP, entpackt, baut SQLite und Embeddings, mit
+      Fortschritt) und **Jev pruefen** (echter Mini-Aufruf). Terminal bleibt noetig fuer
+      `make env` und `git pull`.
 - [x] **Drei Fehler aus Davids erstem 250-Artikel-Lauf behoben** (21.9.2026). Jeder Jev-Aufruf
       schlug mit `URLError` fehl, wurde dreimal mit Backoff wiederholt (~11 s je Artikel) und
       der Lauf mahlte weiter — bei 250 Artikeln rund 45 Minuten fuer 250 identische Fehler.
