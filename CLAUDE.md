@@ -173,6 +173,20 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
       Wahrscheinlichkeitsverteilung gebauter Satz; erfundene EC-Codes kann er nicht
       enthalten, weil nur Optionen aus dem Kandidatenfeld vorkommen.
       Tests: **48 statt 45**, inklusive Jev-Ausfall waehrend eines echten Klassifizierungslaufs.
+- [x] **Der eigentliche Jev-Blocker gefunden: Cloudflares Browser Integrity Check**
+      (21.9.2026). Nach dem Zertifikats-Fix kam `403 … error code: 1010`. Das ist **nicht**
+      der Worker und **nicht** das Token — die Anfrage erreicht den Worker gar nicht.
+      `urllib` sendet ohne eigene Kennung `User-Agent: Python-urllib/3.x`, und Cloudflares
+      Browser Integrity Check blockt genau diese Kennung; BIC ist auf Free/Pro-Zonen ab Werk
+      aktiv. **Das erklaert das gesamte Fehlerbild rueckwirkend:** curl lief (setzt
+      `curl/8.x`), `google-genai` lief (setzt seine eigene) — Davids `ingest` mit 250 Artikeln
+      ging ja durch —, nur `urllib` nicht. Gegen die Cloudflare-Doku und mehrere unabhaengige
+      Reproduktionen geprueft, nicht geraten. Fix: `jev.py` sendet jetzt
+      `User-Agent: etim-pipeline/1.0 (+…)`. **Keine Browser-Tarnung** — die Regel ist ein
+      Namensabgleich am Anfang der Zeichenkette, ein ehrlicher Name genuegt.
+      Dazu: `_explain` erkennt `1010` und nennt die Kante als Ursache, statt faelschlich auf
+      die Token-Berechtigung zu zeigen. Tests: **67 statt 65**, inklusive der Zusicherung,
+      dass die Kennung nicht mit `Python-urllib` beginnt und das Secret trotzdem mitgeht.
 - [x] **Starter funktioniert auch ausserhalb des Projektordners** (21.9.2026). David hat die
       `.command`-Datei auf den Schreibtisch gelegt; `cd "$(dirname "$0")"` landete dort, und
       `make setup` scheiterte mit "No rule to make target 'setup'" — eine Meldung, die nicht

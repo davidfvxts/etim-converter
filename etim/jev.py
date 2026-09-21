@@ -25,6 +25,14 @@ from typing import Any, Callable
 from . import config
 
 # Jev-Grenzen (Cloudflare-Modellkarte typesafe/jev, Stand 21.9.2026)
+# Eigene Kennung fuer jede Anfrage. Ohne sie sendet urllib "Python-urllib/3.x",
+# und Cloudflares Browser Integrity Check blockt genau diese Kennung ab Werk
+# (403, "error code: 1010") — noch bevor die Anfrage den Worker erreicht.
+# Deshalb liefen curl und die Gemini-Bibliothek, nur urllib nicht: beide setzen
+# eine eigene Kennung. Es braucht keine Browser-Tarnung, nur einen Namen, der
+# nicht mit "Python-urllib" beginnt.
+USER_AGENT = "etim-pipeline/1.0 (+https://github.com/davidfvxts/etim-converter)"
+
 MAX_CHOICE_OPTIONS = 255
 MAX_SCORE_LEVELS = 10
 CONTEXT_TOKENS = 32_000
@@ -202,7 +210,8 @@ def _ssl_context():
 def _post(url: str, body: dict, headers: dict[str, str], timeout: int) -> dict:
     req = urllib.request.Request(
         url, data=json.dumps(body).encode("utf-8"), method="POST",
-        headers={"Content-Type": "application/json", **headers},
+        headers={"Content-Type": "application/json", "Accept": "application/json",
+                 "User-Agent": USER_AGENT, **headers},
     )
     with urllib.request.urlopen(req, timeout=timeout, context=_ssl_context()) as resp:
         return json.loads(resp.read().decode("utf-8"))
@@ -218,6 +227,15 @@ def _redact(text: str) -> str:
 
 def _explain(status_code: int, detail: str) -> str:
     """Fehlertext ohne Zugangsdaten — er landet im Dashboard und im Log."""
+    # Cloudflare blockt an der Kante, bevor der Worker ueberhaupt laeuft. Die
+    # Meldung darf dann nicht auf das Token zeigen — da ist nichts falsch.
+    if status_code == 403 and "1010" in detail:
+        return ("Cloudflare hat die Anfrage an der Kante abgewiesen (403, Code 1010) — "
+                "der Worker wurde gar nicht erreicht. Das ist der Browser Integrity Check, "
+                "der die Standardkennung von Python blockt. Die App sendet inzwischen eine "
+                "eigene Kennung; falls das weiter auftritt: Cockpit neu starten, sonst im "
+                "Cloudflare-Dashboard unter Security → Settings den Browser Integrity Check "
+                "fuer diese Route abschalten.")
     known = {
         401: "Jev lehnt die Zugangsdaten ab (401). Worker-Secret bzw. API-Token pruefen.",
         403: "Jev-Zugriff verweigert (403). Token-Berechtigung 'Workers AI' pruefen.",

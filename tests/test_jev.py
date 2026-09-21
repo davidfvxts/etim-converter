@@ -4,6 +4,8 @@ Die Anfrageform ist hier festgenagelt, weil sie gegen eine fremde API läuft:
 wenn sich an `state`/`questions`, am Modellnamen oder am Auspacken der Antwort
 etwas verschiebt, soll das ein Test sagen und nicht ein Kundenlauf.
 """
+import json
+
 import pytest
 
 from etim import config, jev
@@ -249,3 +251,50 @@ def test_a_success_clears_the_streak(live, monkeypatch):
     monkeypatch.setattr(jev, "_post", lambda *a, **k: dict(CHOICE_ANSWER))
     jev.ask("classify", STATE, QUESTIONS)
     assert jev._failures == [], "nach einem Erfolg muss der Zaehler leer sein"
+
+
+def test_every_request_identifies_itself(monkeypatch):
+    """Ohne eigene Kennung blockt Cloudflares Browser Integrity Check (403/1010).
+
+    urllib sendet sonst "Python-urllib/3.x", und genau diese Kennung steht auf
+    Cloudflares Standard-Sperrliste — die Anfrage erreicht den Worker nie.
+    """
+    # Bewusst ohne die "live"-Vorrichtung: die ersetzt _post, also genau die
+    # Stelle, an der die Kopfzeilen gesetzt werden. Hier wird eine Ebene
+    # tiefer abgefangen, bei urlopen.
+    monkeypatch.setattr(config, "DRY_RUN", False)
+    monkeypatch.setattr(config, "JEV_TRANSPORT", "worker")
+    monkeypatch.setattr(config, "JEV_WORKER_URL", "https://w/jev")
+    monkeypatch.setattr(config, "JEV_WORKER_SECRET", "s")
+    gesehen = {}
+
+    def fake_urlopen(req, timeout=None, context=None):
+        gesehen.update({k.lower(): v for k, v in req.header_items()})
+
+        class R:
+            def read(self): return json.dumps(CHOICE_ANSWER).encode()
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        return R()
+
+    monkeypatch.setattr(jev.urllib.request, "urlopen", fake_urlopen)
+    jev.reset_failures()
+    jev.ask("classify", STATE, QUESTIONS)
+
+    ua = gesehen.get("user-agent", "")
+    assert ua, "ohne User-Agent setzt urllib seine gesperrte Standardkennung"
+    assert not ua.startswith("Python-urllib"), f"gesperrte Kennung: {ua}"
+    assert "etim" in ua.lower()
+    # Das Secret muss trotzdem mitgehen.
+    assert gesehen.get("authorization") == "Bearer s"
+
+
+def test_cloudflare_edge_block_is_not_blamed_on_the_token():
+    """403 mit Code 1010 kommt von Cloudflare, nicht von Workers AI."""
+    text = jev._explain(403, 'error code: 1010')
+    assert "1010" in text and "Kante" in text
+    assert "Token-Berechtigung" not in text, "zeigt auf die falsche Ursache"
+
+    # Ein echtes Berechtigungsproblem bleibt beim alten Text.
+    andere = jev._explain(403, "insufficient permissions")
+    assert "Token-Berechtigung" in andere
