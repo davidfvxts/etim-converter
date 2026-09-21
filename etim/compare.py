@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable
 
-from . import classify, config, jev, llm, versions
+from . import checkpoint, classify, config, jev, llm, versions
 from .model import ClassFeature, EtimModel
 from .schemas import (ClassCandidate, ClassDecision, Comparison, ComparisonItem,
                       FeatureAnswer, FeatureComparison, ModelAnswer, ModelMetrics,
@@ -384,7 +384,8 @@ def _reused_gemini(out_dir: Path, model: EtimModel) -> dict[str, ModelAnswer]:
 
 def run(out_dir: Path, model: EtimModel | None = None, *,
         reuse_gemini: bool = False, with_features: bool = False,
-        progress: Callable[[str, int, int, str], None] | None = None) -> Comparison:
+        progress: Callable[[str, int, int, str], None] | None = None,
+        fresh: bool = False) -> Comparison:
     """Beide Modelle ueber products.json laufen lassen und compare.json schreiben."""
     model = model or EtimModel()
     tick = progress or (lambda *_: None)
@@ -409,6 +410,15 @@ def run(out_dir: Path, model: EtimModel | None = None, *,
         for p, c, rr in zip(products, cands, ref_ranks)
     ]
 
+    cp = checkpoint.Checkpoint(out_dir, "compare", {
+        "etim_version": model.version, "top_k_gemini": config.TOP_K_CLASSES,
+        "top_k_jev": config.JEV_TOP_K, "reuse_gemini": bool(reuse_gemini),
+        "dry_run": config.DRY_RUN, "n": len(products)})
+    if fresh:
+        cp.clear()
+    elif (wieder := cp.load()):
+        print(f"  Zwischenstand gefunden: {wieder} Artikel schon fertig")
+
     cached = _reused_gemini(out_dir, model) if reuse_gemini else {}
     if reuse_gemini:
         if cached:
@@ -417,23 +427,29 @@ def run(out_dir: Path, model: EtimModel | None = None, *,
         else:
             notes.append("Gemini sollte wiederverwendet werden, aber classified.json fehlt — neu gefragt.")
 
-    for i, (it, cand) in enumerate(zip(items, cands), 1):
-        tick("gemini", i - 1, len(items), f"Gemini: {it.product.supplier_pid}")
-        pid = it.product.supplier_pid
-        if pid in cached:
-            ans = cached[pid]
-            # Rang gegen die frische Retrieval-Liste, nicht gegen die gespeicherten Top-5.
-            ranks = {c.class_id: i + 1 for i, c in enumerate(cand[: config.TOP_K_CLASSES])}
-            ans.rank_of_choice = ranks.get(ans.class_id or "")
-            it.answers["gemini"] = ans
-        else:
-            it.answers["gemini"] = ask_gemini(model, it.product, cand[: config.TOP_K_CLASSES])
-    tick("gemini", len(items), len(items), "Gemini fertig")
-
-    for i, (it, cand) in enumerate(zip(items, cands), 1):
-        tick("jev", i - 1, len(items), f"Jev: {it.product.supplier_pid}")
-        it.answers["jev"] = ask_jev(model, it.product, cand[: config.JEV_TOP_K])
-    tick("jev", len(items), len(items), "Jev fertig")
+    # Je Modell eigener Zwischenstand: faellt Jev aus, bleiben Geminis Antworten.
+    for who, top_k, frage in (("gemini", config.TOP_K_CLASSES, None),
+                              ("jev", config.JEV_TOP_K, None)):
+        for i, (it, cand) in enumerate(zip(items, cands), 1):
+            pid = it.product.supplier_pid
+            key = f"{who}:{pid}"
+            if key in cp.done:
+                it.answers[who] = ModelAnswer.model_validate(cp.done[key])
+                continue
+            tick(who, i - 1, len(items), f"{it.product.name[:50]} ({pid})")
+            if who == "gemini" and pid in cached:
+                ans = cached[pid]
+                # Rang gegen die frische Retrieval-Liste, nicht gegen die gespeicherten Top-5.
+                ranks = {c.class_id: n + 1 for n, c in enumerate(cand[:top_k])}
+                ans.rank_of_choice = ranks.get(ans.class_id or "")
+            elif who == "gemini":
+                ans = ask_gemini(model, it.product, cand[:top_k])
+            else:
+                ans = ask_jev(model, it.product, cand[:top_k])
+            it.answers[who] = ans
+            cp.add(key, ans.model_dump())
+        cp.save()
+        tick(who, len(items), len(items), f"{who} fertig")
 
     feats: list[FeatureComparison] = []
     if with_features:
@@ -445,10 +461,17 @@ def run(out_dir: Path, model: EtimModel | None = None, *,
             notes.append("Merkmalsvergleich ohne enriched.json — Gemini hat fuer diese Artikel "
                          "keine Merkmale geliefert, also auch keine Belege.")
         for i, it in enumerate(todo, 1):
-            tick("features", i - 1, len(todo), f"Merkmale: {it.product.supplier_pid}")
+            pid = it.product.supplier_pid
+            key = f"features:{pid}"
+            if key in cp.done:
+                feats.append(FeatureComparison.model_validate(cp.done[key]))
+                continue
+            tick("features", i - 1, len(todo), f"{it.product.name[:50]} ({pid})")
             cid = it.answers["jev"].class_id or it.answers["gemini"].class_id
-            feats.append(compare_features(model, it.product, cid,
-                                          g_feats.get(it.product.supplier_pid, [])))
+            fc = compare_features(model, it.product, cid, g_feats.get(pid, []))
+            feats.append(fc)
+            cp.add(key, fc.model_dump())
+        cp.save()
         tick("features", len(todo), len(todo), "Merkmale fertig")
 
     if not reference:
@@ -483,6 +506,7 @@ def run(out_dir: Path, model: EtimModel | None = None, *,
     )
     (out_dir / "compare.json").write_text(
         json.dumps(comp.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8")
+    cp.clear()
     g, j = comp.metrics["gemini"], comp.metrics["jev"]
     print(f"compare: {len(items)} Artikel — ohne Klasse: Gemini {g.no_class}, Jev {j.no_class}"
           + (f" | Treffer: Gemini {g.hits}/{comp.n_reference}, Jev {j.hits}/{comp.n_reference}"

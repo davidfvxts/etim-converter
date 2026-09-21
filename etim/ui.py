@@ -159,6 +159,7 @@ def payload(job_dir: Path) -> dict:
         "files": files,
         "jev": jev.status(),
         "run": studio.run_state(job_dir.name),
+        "has_checkpoint": any(job_dir.glob(".checkpoint.*.json")),
         "meta": _load(job_dir / "job.json", {}),
     }
 
@@ -293,6 +294,11 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._upload()
             if route == "/api/run":
                 return self._start_run()
+            if route == "/api/run/cancel":
+                data = json.loads(self._body(4_000) or b"{}")
+                job = str(data.get("job") or self.default_job)
+                key = job if job.startswith("etim:") else studio.safe_job(job)
+                return self._json(studio.cancel(key))
             if route == "/api/load-etim":
                 data = json.loads(self._body(4_000) or b"{}")
                 return self._json(studio.start_load_etim(str(data.get("version") or "")), 202)
@@ -335,6 +341,7 @@ class Handler(SimpleHTTPRequestHandler):
                              etim_version=str(data.get("etim_version") or "") or None,
                              reuse_gemini=bool(data.get("reuse_gemini")),
                              with_features=bool(data.get("with_features")),
+                             fresh=bool(data.get("fresh")),
                              pages=pages)
         return self._json(state, 202)
 

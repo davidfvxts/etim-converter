@@ -48,6 +48,7 @@ Ohne API-Key: `make test` läuft die ganze Pipeline mit Fakes gegen die Mini-Fix
 | `compare.json` | Modellvergleich Gemini gegen Jev: Antworten, Kennzahlen, Kandidatenränge |
 | `reference.json` | optional, von Hand: `{"<artikelnr>": "EC004089"}` — ohne diese Datei wird keine Trefferquote ausgewiesen |
 | `source/` | der hochgeladene Katalog (Kundendaten, gitignored) |
+| `.checkpoint.*.json` | Zwischenstand eines laufenden/abgebrochenen Laufs; wird nach Erfolg gelöscht |
 | `review.decisions.json` | Freigaben und Korrekturvermerke aus dem Prüf-Cockpit |
 
 ## Ohne Terminal arbeiten
@@ -81,11 +82,30 @@ Beleg steht dort der Grund statt eines Wertes. `python -m etim ui out/<job>` sta
 Cockpit direkt auf einem Job.
 
 Unter **Katalog** lässt sich ein PDF, XLSX oder CSV per Drag & Drop einspielen: daraus entsteht
-ein neuer Job, die Artikel werden im Hintergrund extrahiert und direkt danach läuft der Vergleich.
-Der Fortschritt (Artikel extrahieren → Retrieval → Gemini → Jev) steht in der Oberfläche, Fehler
-ebenfalls. Angenommen wird nur, was inhaltlich ein PDF, eine Excel-Mappe oder eine CSV ist —
-die Endung allein zählt nicht. Bestehende Jobs werden nie überschrieben, und solange ein Lauf
-aktiv ist, startet auf demselben Job kein zweiter. Der Server hört nur auf 127.0.0.1.
+ein neuer Job. **Der Lauf startet nicht von selbst** — nach dem Hochladen steht der Job auf
+„bereit zum Start“, und erst der Knopf schickt ihn los. So lässt sich vorher noch das Modell
+(Gemini, Jev oder beide) und die ETIM-Version umstellen. Angenommen wird nur, was inhaltlich ein
+PDF, eine Excel-Mappe oder eine CSV ist — die Endung allein zählt nicht. Bestehende Jobs werden
+nie überschrieben, und solange ein Lauf aktiv ist, startet auf demselben Job kein zweiter.
+Der Server hört nur auf 127.0.0.1.
+
+### Fortschritt, Abbrechen, Zwischenstand
+
+Während ein Lauf läuft, zeigt die Oberfläche Prozent, `x von y` Artikeln, die verstrichene Zeit
+und eine hochgerechnete Restzeit, dazu die aktuelle Stufe (Artikel extrahieren → Retrieval →
+Gemini → Jev → Merkmale) und den Namen des Artikels, der gerade bearbeitet wird. Fehler stehen
+im Cockpit, nicht nur im Terminal.
+
+**Abbrechen** stoppt zwischen zwei Artikeln — die laufende Anfrage wird zu Ende geführt, danach
+endet der Lauf. Was bis dahin fertig war, ist gesichert.
+
+**Der Zwischenstand wird mitgeschrieben** (alle 5 Artikel, `out/<job>/.checkpoint.*.json`).
+Ein neuer Lauf auf demselben Job setzt dort auf, statt von vorn zu beginnen: nach einem Abbruch,
+nach einem Absturz und auch dann, wenn Jev mitten im Lauf ausfällt — Geminis bereits bezahlte
+Antworten bleiben erhalten. Wer wirklich neu rechnen will, nimmt **„Von vorn beginnen“**
+(im Terminal: `--fresh`). Ändern sich Modell oder ETIM-Version, wird der Zwischenstand von selbst
+verworfen — er gehört dann nicht mehr zu diesem Lauf. `ETIM_CHECKPOINT_EVERY` stellt den Abstand
+ein.
 
 Der Server kommt aus der Standardbibliothek, die Oberfläche ist statisches CSS/JS in `web/` —
 kein Build, keine npm-Abhängigkeit, läuft offline. `web/assets/tokens.css` ist der einzige Ort

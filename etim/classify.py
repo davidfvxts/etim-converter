@@ -10,10 +10,11 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 
-from . import config, jev, llm, versions
+from . import checkpoint, config, jev, llm, versions
 from .model import EtimModel
 from .schemas import ClassCandidate, ClassDecision, ClassifiedProduct, ModelAnswer, Product
 
@@ -277,7 +278,9 @@ def decide_jev(model: EtimModel, p: Product, cands: list[ClassCandidate]) -> tup
 
 
 def run(out_dir: Path, model: EtimModel | None = None, *,
-        classifier: str | None = None) -> list[ClassifiedProduct]:
+        classifier: str | None = None,
+        progress: Callable[[str, int, int, str], None] | None = None,
+        fresh: bool = False) -> list[ClassifiedProduct]:
     """products.json -> classified.json mit dem gewaehlten Modell.
 
     classifier: "gemini" | "jev" | "both". Bei "both" laufen beide, der Vergleich
@@ -294,7 +297,7 @@ def run(out_dir: Path, model: EtimModel | None = None, *,
         # Lazy, weil compare seinerseits classify braucht.
         from . import compare
 
-        comp = compare.run(out_dir, model)
+        comp = compare.run(out_dir, model, progress=progress, fresh=fresh)
         result = []
         for it in comp.items:
             a = it.answers["gemini"]
@@ -307,27 +310,54 @@ def run(out_dir: Path, model: EtimModel | None = None, *,
                 model="gemini", etim_version=model.version, simulated=a.simulated))
         return _write(out_dir, result, "gemini (Vergleich in compare.json)")
 
+    tick = progress or (lambda *_: None)
     data = json.loads((out_dir / "products.json").read_text())
     products = [Product.model_validate(p) for p in data["products"]]
+
+    # Zwischenstand: ein abgebrochener Lauf soll die bezahlten Antworten behalten.
+    cp = checkpoint.Checkpoint(out_dir, "classify", {
+        "classifier": classifier, "etim_version": model.version,
+        "top_k": config.JEV_TOP_K if classifier == "jev" else config.TOP_K_CLASSES,
+        "dry_run": config.DRY_RUN, "n": len(products)})
+    if fresh:
+        cp.clear()
+    elif (wieder := cp.load()):
+        print(f"  Zwischenstand gefunden: {wieder} Artikel schon fertig, "
+              f"{len(products) - wieder} offen")
+
+    tick("retrieval", 0, len(products), "Kandidaten suchen")
     ids, emb = _class_matrix(model)
     top_k = config.JEV_TOP_K if classifier == "jev" else config.TOP_K_CLASSES
-    result: list[ClassifiedProduct] = []
+    offen = [p for p in products if p.supplier_pid not in cp.done]
+    fertig = len(cp.done)
+
     batch = 50
-    for i in range(0, len(products), batch):
-        chunk = products[i : i + batch]
+    for i in range(0, len(offen), batch):
+        chunk = offen[i : i + batch]
         cands = candidates_for(model, ids, emb, chunk, top_k)
         for p, c in zip(chunk, cands):
+            tick(classifier, fertig, len(products), p.name[:60])
             if classifier == "jev":
                 d, a = decide_jev(model, p, c)
                 simulated = a.simulated
             else:
                 d, simulated = decide(model, p, c), config.DRY_RUN
-            result.append(ClassifiedProduct(
+            cp.add(p.supplier_pid, ClassifiedProduct(
                 product=p, candidates=c[:5], decision=d,
                 needs_review=_review_flag(model, d, c),
-                model=classifier, etim_version=model.version, simulated=simulated))
-        print(f"  klassifiziert {min(i + batch, len(products))}/{len(products)}")
-    return _write(out_dir, result, classifier)
+                model=classifier, etim_version=model.version,
+                simulated=simulated).model_dump())
+            fertig += 1
+        print(f"  klassifiziert {fertig}/{len(products)}")
+    cp.save()
+    tick(classifier, len(products), len(products), "fertig")
+
+    # In der Reihenfolge des Katalogs ausgeben, nicht in der des Zwischenstands.
+    result = [ClassifiedProduct.model_validate(cp.done[p.supplier_pid])
+              for p in products if p.supplier_pid in cp.done]
+    out = _write(out_dir, result, classifier)
+    cp.clear()
+    return out
 
 
 def _write(out_dir: Path, result: list[ClassifiedProduct], label: str) -> list[ClassifiedProduct]:

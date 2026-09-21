@@ -413,3 +413,18 @@
   font-size: var(--fs-2xs); font-weight: var(--fw-medium); color: var(--ink-muted);
   white-space: nowrap;
 }
+
+/* === Lauf: Zahlen, Zeit, Abbruch ======================================== */
+.run__spacer { flex: 1; }
+.run__numbers {
+  display: flex; align-items: baseline; gap: var(--s-4);
+  margin-top: var(--s-5);
+}
+.run__pct { font-size: var(--fs-xl); font-weight: var(--fw-semi); color: var(--ink); }
+.run__of { font-size: var(--fs-sm); color: var(--ink-muted); }
+.run__time { font-size: var(--fs-2xs); color: var(--ink-faint); white-space: nowrap; }
+.run__time--eta { color: var(--ink-muted); }
+.run__msg {
+  margin-top: var(--s-4); font-size: var(--fs-sm); color: var(--ink);
+  overflow-wrap: anywhere;
+}

@@ -12,7 +12,7 @@ const state = {
   labels: {}, decisions: {},
   view: 'overview', selected: null, filter: 'review', query: '',
   // Modellvergleich und Laufsteuerung
-  compare: null, jev: null, run: null, meta: {},
+  compare: null, jev: null, run: null, meta: {}, has_checkpoint: false, justUploaded: '',
   jobs: [], jobsLoaded: false, serverUp: false, busy: '',
   cmpSelected: null, cmpFilter: 'all', cmpQuery: '',
   runOpts: { reuse_gemini: false, with_features: false, classifier: 'gemini', etim_version: '' },
@@ -438,11 +438,14 @@ async function uploadCatalog(file) {
       body: file,
     });
     state.busy = '';
-    toast(`Job '${created.job}' angelegt`);
     await loadJobs();
     await loadJob(created.job);
+    // Bewusst kein Selbststart: erst wenn Modell und ETIM-Version stimmen,
+    // und erst auf Knopfdruck. Ein Lauf kostet Zeit und Geld.
+    state.justUploaded = created.job;
+    state.view = 'catalog';
     render();
-    await startRun('full', created.job);
+    toast(`Job „${created.job}" angelegt — bereit zum Start`);
   } catch (e) {
     state.busy = '';
     state.run = { state: 'error', error: e.message, message: 'Upload abgelehnt', stages: [], log: [] };
@@ -450,12 +453,12 @@ async function uploadCatalog(file) {
   }
 }
 
-async function startRun(kind, job = state.job) {
+async function startRun(kind, job = state.job, extra = {}) {
   if (!job) { toast('Kein Job gewählt'); return; }
   try {
     state.run = await api('api/run', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ job, kind, ...state.runOpts }),
+      body: JSON.stringify({ job, kind, ...state.runOpts, ...extra }),
     });
     render();
     pollRun(job);
@@ -463,6 +466,16 @@ async function startRun(kind, job = state.job) {
     state.run = { state: 'error', error: e.message, message: 'Lauf nicht gestartet', stages: [], log: [] };
     render();
   }
+}
+
+async function cancelRun(job = state.job) {
+  try {
+    state.run = await api('api/run/cancel', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job }),
+    });
+    render();
+  } catch (e) { toast(e.message); }
 }
 
 let pollTimer = null;
@@ -595,6 +608,11 @@ function ViewCatalog() {
   const running = state.run?.state === 'running';
   const pick = state.runOpts.classifier;
   const both = pick === 'both';
+  // Solange keine Artikel gelesen sind, muss der Lauf beim Katalog anfangen.
+  const braucht_ingest = !state.products?.length && !!state.meta?.source;
+  const losLabel = braucht_ingest
+    ? (both ? 'Katalog einlesen und vergleichen' : `Katalog einlesen und mit ${MODEL_LABEL[pick]} klassifizieren`)
+    : (both ? 'Vergleich starten' : `Klassifizieren mit ${MODEL_LABEL[pick]}`);
   const j = state.jev;
   const accept = '.pdf,.xlsx,.csv,application/pdf,text/csv';
 
@@ -631,18 +649,26 @@ function ViewCatalog() {
                      'Spart die Gemini-Kosten — dann sind Laufzeit und Kosten nur für Jev gemessen.') : null,
           opt('with_features', 'ETIM-Merkmale mitbefüllen',
               'Logische Merkmale als Noul, Wertelisten als Choice. Zahlen bleiben bei Gemini.')),
+        state.justUploaded === state.job && !state.products?.length
+          ? Note(`Der Katalog liegt bereit, aber es wurde noch nichts gelesen. ` +
+                 `Oben Modell und ETIM-Version prüfen, dann „${losLabel}“.`, 'accent')
+          : null,
         el('div', { class: 'row-actions' },
-          Button(both ? 'Vergleich starten' : `Klassifizieren mit ${MODEL_LABEL[pick]}`, {
-            variant: 'primary', iconName: both ? 'scale' : 'spark',
+          Button(losLabel, {
+            variant: 'primary', iconName: braucht_ingest ? 'upload' : (both ? 'scale' : 'spark'),
             disabled: running || !state.job || state.demo,
-            onClick: () => startRun('compare'),
+            onClick: () => startRun(braucht_ingest ? 'full' : 'compare'),
           }),
-          Button('Katalog neu einlesen', {
-            iconName: 'upload', disabled: running || !state.meta?.source || state.demo,
-            title: state.meta?.source ? '' : 'Nur für Jobs, deren Katalog hier hochgeladen wurde',
+          !braucht_ingest && state.meta?.source ? Button('Katalog neu einlesen', {
+            iconName: 'upload', disabled: running || state.demo,
             onClick: () => startRun('full'),
-          })),
-        RunProgress(state.run),
+          }) : null,
+          state.has_checkpoint ? Button('Von vorn beginnen', {
+            iconName: 'ban', disabled: running || state.demo,
+            title: 'Zwischenstand verwerfen und alles neu fragen',
+            onClick: () => startRun(braucht_ingest ? 'full' : 'compare', state.job, { fresh: true }),
+          }) : null),
+        RunProgress(state.run, { onCancel: () => cancelRun() }),
       )),
     ),
     Card(`Jobs · ${state.jobs.length}`, jobRows.length ? Table([

@@ -132,6 +132,7 @@ python -m etim ui out/demo                 # Prüf-Cockpit im Browser (stdlib-Se
 python -m etim studio                      # Cockpit über allen Jobs: hochladen, Lauf starten
 python -m etim compare --job demo          # Gemini gegen Jev auf derselben Kandidatenliste
 python -m etim compare --job demo --reuse-gemini --features
+python -m etim classify --job demo --fresh         # Zwischenstand verwerfen, von vorn rechnen
 python -m etim reference out/demo          # Gerüst für reference.json (Klassen bleiben leer)
 bash scripts/setup_jev.sh                  # Worker deployen, Secret setzen, .env schreiben, prüfen
 python scripts/make_demo_data.py           # Beispieldaten der Oberfläche neu erzeugen
@@ -140,6 +141,30 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
 
 ## Stand / Nächste Schritte (aktualisiere diesen Block nach jeder Session)
 
+- [x] **Checkpointing, Start erst auf Klick, echter Fortschritt, Abbrechen** (21.9.2026, Wunsch
+      von David nach dem 250-Artikel-Lauf). Die vier Dinge hängen zusammen: ein langer Lauf muss
+      unterbrechbar sein, und unterbrechbar ist er nur, wenn nichts verloren geht.
+      1. **`etim/checkpoint.py`** (neu): `classify` und `compare` schreiben alle
+         `ETIM_CHECKPOINT_EVERY` (5) Artikel einen Zwischenstand nach
+         `out/<job>/.checkpoint.<kind>.json`, atomar über `mkstemp` + `os.replace`. Ein neuer Lauf
+         lädt ihn und überspringt, was fertig ist; nach Erfolg wird er gelöscht.
+         **Der Zwischenstand ist an seine Bedingungen gebunden** (Modell, ETIM-Version, Artikelzahl):
+         passt eine nicht, wird er verworfen statt falsch weiterbenutzt. In `compare` liegen
+         Gemini, Jev und Merkmale unter getrennten Schlüsseln — **faellt Jev mitten im Lauf aus,
+         bleiben Geminis bereits bezahlte Antworten erhalten**, genau der Fall aus Davids Lauf.
+      2. **Kein Selbststart nach dem Upload.** Der Upload legt nur den Job an; der Lauf beginnt
+         erst auf den Knopf. Vorher lassen sich Modell und ETIM-Version noch umstellen — vorher
+         war der Lauf schon weg, bevor David die Karten gesehen hatte.
+      3. **Fortschritt mit Zahlen statt Balken:** Prozent, `x von y`, verstrichene Zeit,
+         hochgerechnete Restzeit, aktuelle Stufe und der Name des Artikels, der gerade dran ist.
+      4. **Abbrechen** setzt ein Flag; `tick` wirft zwischen zwei Artikeln `RunCancelled`. Die
+         laufende Anfrage wird zu Ende geführt (sonst wäre sie bezahlt und weg), danach endet der
+         Lauf mit Ansage und dem Hinweis, dass der Zwischenstand steht.
+      CLI: `--fresh` auf classify/run/compare ignoriert den Zwischenstand, im Cockpit als
+      **„Von vorn beginnen“**. Tests: **75 statt 65**, inklusive Abbruch mitten im Lauf und
+      Wiederaufnahme. Im Browser durchgespielt: Upload startet nicht von selbst, Abbruch nach
+      2 von 4 Artikeln, der Folgelauf setzt bei Artikel 3 auf und schreibt alle 4 in
+      `classified.json`.
 - [x] **Jev als zweites Modell eingebaut, Dashboard erweitert** (21.9.2026). Neu: `etim/jev.py`
       (einziger Aufrufort, wie `llm.py` für Gemini), `etim/compare.py`, `etim/studio.py`,
       `worker/` und im Cockpit die Ansichten **Katalog** (Drag & Drop, Lauf starten, Fortschritt,
@@ -251,10 +276,9 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
          `ETIM_JEV_MAX_FAILURES` (5) Fehlschlaegen in Folge bricht der Lauf mit Ansage ab
          statt weiterzulaufen. Ein Erfolg setzt den Zaehler zurueck, ein einzelner Aussetzer
          vergiftet den Lauf also nicht. Tests: **65 statt 61**.
-      **Offen und wichtig:** es gibt weiterhin kein Checkpointing. Wer einen Lauf abbricht,
-      verliert auch die bereits fertigen Gemini-Antworten, weil `classified.json` und
-      `compare.json` erst am Ende geschrieben werden. Bei 250 Artikeln ist das teuer genug,
-      um es als naechstes anzugehen.
+      **Nachtrag: das fehlende Checkpointing ist erledigt** (siehe Eintrag oben). Bis dahin
+      verlor ein Abbruch auch die bereits fertigen Gemini-Antworten, weil `classified.json` und
+      `compare.json` erst am Ende geschrieben wurden.
 - [ ] **NICHT GEMESSEN: der echte Lauf fehlt — diese Umgebung kann ihn nicht fahren.** Der Code
       ist vollständig und getestet, aber jede Zahl im Dashboard stammt bisher aus dem Trockenlauf
       und ist als `simuliert` gekennzeichnet. Vier Gründe, alle Umgebung, keiner Code:
@@ -517,8 +541,9 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
       1.000 ~$13, 5.000 ~$65; mit Batch API die Haelfte. Bei vierstelligen Pilotpreisen unter
       1 % Kostenanteil — der Engpass ist der Durchsatz, nicht der Token-Preis.
 - [ ] **Durchsatz:** ~25 s/Artikel seriell. Bei 5.000 Artikeln sind das ~35 h. Für Vollkataloge
-      Gemini Batch API (50 % Rabatt, 24-h-Ziel) oder Parallelisierung vorsehen. Ausserdem fehlt
-      Checkpointing: bricht ein Lauf spät ab, ist alles verloren.
+      Gemini Batch API (50 % Rabatt, 24-h-Ziel) oder Parallelisierung vorsehen. Checkpointing
+      ist seit 21.9.2026 da, ein später Abbruch kostet also nur noch die letzten Artikel;
+      die Laufzeit selbst bleibt das Problem.
 - [x] **Prüf-Cockpit gebaut** (`python -m etim ui out/<job>`). Vier Ansichten: Übersicht,
       Artikel, Prüfen, Export. Kern ist das Merkmalsregister — je ETIM-Merkmal eine Zeile mit
       Wert, Einheit, Konfidenz und darunter dem Katalogzitat, das den Wert belegt; ohne Beleg
@@ -541,6 +566,7 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
 - `etim/report.py` — Markdown-Report + Review-CSV
 - `etim/jev.py` — Jev-Wrapper (Choice/Score/Noul, Worker- oder Cloudflare-Transport, DRY_RUN)
 - `etim/compare.py` — Gemini gegen Jev: Kandidatenfeld, Kennzahlen, Merkmalsvergleich
+- `etim/checkpoint.py` — Zwischenstand langer Läufe (atomar, an Modell/Version gebunden)
 - `etim/studio.py` — Upload, Jobanlage, Läufe im Hintergrund (ohne HTTP, darum testbar)
 - `etim/ui.py` — Prüf-Cockpit: stdlib-Server, liefert Jobs als JSON, nimmt Upload und Freigaben entgegen
 - `worker/` — Cloudflare-Worker als Jev-Vorschaltung (Secret dort, nicht in der App)

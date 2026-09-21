@@ -45,6 +45,8 @@ def main(argv=None):
             s.add_argument("--model", choices=config.CLASSIFIERS, default=None,
                            help="Klassifizierungsmodell (Vorgabe: ETIM_CLASSIFIER, sonst gemini)")
         if name in ("classify", "run", "compare"):
+            s.add_argument("--fresh", action="store_true",
+                           help="Zwischenstand verwerfen und von vorn beginnen")
             s.add_argument("--etim", default=None,
                            help="ETIM-Version, z. B. 8.0, 9.0 oder 10.0 (Vorgabe: ETIM_VERSION)")
         if name == "compare":
@@ -183,7 +185,8 @@ def main(argv=None):
         from . import versions
         from .model import EtimModel
 
-        classify.run(out_dir, EtimModel(version=versions.require(a.etim)), classifier=a.model)
+        classify.run(out_dir, EtimModel(version=versions.require(a.etim)),
+                     classifier=a.model, fresh=a.fresh)
     if a.cmd == "compare":
         from . import compare
 
@@ -191,7 +194,7 @@ def main(argv=None):
         from .model import EtimModel
 
         compare.run(out_dir, EtimModel(version=versions.require(a.etim)),
-                    reuse_gemini=a.reuse_gemini, with_features=a.features)
+                    reuse_gemini=a.reuse_gemini, with_features=a.features, fresh=a.fresh)
         return
     if a.cmd in ("features", "run"):
         from . import features

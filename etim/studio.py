@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+import time
 import traceback
 import zipfile
 from dataclasses import dataclass, field
@@ -48,6 +49,14 @@ def etim_key(version: str) -> str:
 
 class UploadError(ValueError):
     """Abgelehnter Upload — die Meldung geht wortwoertlich ins Dashboard."""
+
+
+class RunCancelled(Exception):
+    """Der Lauf wurde aus der Oberflaeche abgebrochen.
+
+    Wird aus dem Fortschritts-Rueckruf geworfen, also zwischen zwei Artikeln.
+    Der Zwischenstand bleibt damit erhalten und der naechste Lauf setzt dort auf.
+    """
 
 
 # ----------------------------------------------------------------- Dateiprüfung
@@ -209,7 +218,8 @@ class RunState:
     kind: str
     classifier: str = "gemini"      # gemini | jev | both
     etim_version: str = ""          # 8.0 | 9.0 | 10.0
-    state: str = "running"          # running | done | error
+    state: str = "running"          # running | done | error | cancelled
+    cancel: bool = False
     stage: str = ""
     stage_label: str = ""
     done: int = 0
@@ -220,9 +230,26 @@ class RunState:
     finished: str = ""
     log: list[str] = field(default_factory=list)
     stages: list[str] = field(default_factory=list)
+    _t0: float = 0.0
+    _t1: float = 0.0
+
+    def elapsed(self) -> float:
+        start = self._t0 or 0.0
+        end = self._t1 or time.monotonic()
+        return max(0.0, end - start)
+
+    def eta(self) -> float | None:
+        """Restzeit aus dem bisherigen Tempo. Erst ab ein paar Artikeln sinnvoll."""
+        if self.state != "running" or self.done < 3 or self.total <= self.done:
+            return None
+        pro_stueck = self.elapsed() / self.done
+        return pro_stueck * (self.total - self.done)
 
     def as_dict(self) -> dict:
         return {
+            "elapsed_s": round(self.elapsed()),
+            "eta_s": round(self.eta()) if self.eta() is not None else None,
+            "cancel_requested": self.cancel,
             "job": self.job, "kind": self.kind, "classifier": self.classifier,
             # Beim Laden einer ETIM-Version ist kein Modell beteiligt — dann auch
             # keins anzeigen, sonst steht dort faelschlich "Gemini".
@@ -249,6 +276,16 @@ def active(job: str) -> bool:
     return bool(r and r.state == "running")
 
 
+def cancel(job: str) -> dict:
+    """Abbruch anfordern. Der Lauf endet zwischen zwei Artikeln, nicht mittendrin."""
+    r = RUNS.get(job)
+    if not r or r.state != "running":
+        raise UploadError(f"Für '{job}' läuft gerade kein Lauf.")
+    r.cancel = True
+    r.message = "Abbruch angefordert — der laufende Artikel wird noch zu Ende gebracht …"
+    return r.as_dict()
+
+
 def run_state(job: str) -> dict | None:
     r = RUNS.get(job)
     return r.as_dict() if r else None
@@ -256,7 +293,8 @@ def run_state(job: str) -> dict | None:
 
 def start(job_dir: Path, *, kind: str = "compare", reuse_gemini: bool = False,
           with_features: bool = False, pages: tuple[int, int] | None = None,
-          classifier: str | None = None, etim_version: str | None = None) -> dict:
+          classifier: str | None = None, etim_version: str | None = None,
+          fresh: bool = False) -> dict:
     """Einen Lauf im Hintergrund starten. Je Job laeuft hoechstens einer."""
     job = job_dir.name
     classifier = (classifier or config.CLASSIFIER).lower()
@@ -278,7 +316,7 @@ def start(job_dir: Path, *, kind: str = "compare", reuse_gemini: bool = False,
         if with_features:
             stages.append("features")
         st = RunState(job=job, kind=kind, classifier=classifier,
-                      etim_version=etim_version, stages=stages,
+                      etim_version=etim_version, stages=stages, _t0=time.monotonic(),
                       started=datetime.now(timezone.utc).isoformat(timespec="seconds"),
                       stage=stages[0], stage_label=STAGE_LABELS[stages[0]],
                       message="Lauf gestartet")
@@ -286,7 +324,7 @@ def start(job_dir: Path, *, kind: str = "compare", reuse_gemini: bool = False,
 
     t = threading.Thread(target=_worker, name=f"etim-run-{job}", daemon=True,
                          args=(job_dir, st, kind, reuse_gemini, with_features, pages,
-                               classifier, etim_version))
+                               classifier, etim_version, fresh))
     t.start()
     return st.as_dict()
 
@@ -307,7 +345,7 @@ def start_load_etim(version: str) -> dict:
         if active(key):
             raise UploadError(f"ETIM {v} wird bereits geladen.")
         st = RunState(job=key, kind="load-etim", etim_version=v,
-                      stages=["etim"],
+                      stages=["etim"], _t0=time.monotonic(),
                       started=datetime.now(timezone.utc).isoformat(timespec="seconds"),
                       stage="etim", stage_label=f"ETIM {v} laden",
                       message=f"ETIM {v} wird geladen")
@@ -347,16 +385,21 @@ def _load_etim_worker(st: RunState, version: str) -> None:
         st.log.append(st.error)
         traceback.print_exc()
     finally:
+        st._t1 = time.monotonic()
         st.finished = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _worker(job_dir: Path, st: RunState, kind: str, reuse_gemini: bool,
             with_features: bool, pages: tuple[int, int] | None, classifier: str,
-            etim_version: str) -> None:
+            etim_version: str, fresh: bool = False) -> None:
     def tick(stage: str, done: int, total: int, message: str) -> None:
+        if st.cancel:
+            # Zwischen zwei Artikeln: der Zwischenstand ist geschrieben, der
+            # naechste Lauf setzt genau hier wieder auf.
+            raise RunCancelled()
         st.stage, st.stage_label = stage, STAGE_LABELS.get(stage, stage)
         st.done, st.total, st.message = done, total, message
-        if not st.log or st.log[-1] != message:
+        if message and (not st.log or st.log[-1] != message):
             st.log.append(message)
 
     try:
@@ -383,24 +426,31 @@ def _worker(job_dir: Path, st: RunState, kind: str, reuse_gemini: bool,
             from . import compare
 
             comp = compare.run(job_dir, etim_model, reuse_gemini=reuse_gemini,
-                               with_features=with_features, progress=tick)
+                               with_features=with_features, progress=tick, fresh=fresh)
             st.message = (f"{len(comp.items)} Artikel verglichen — ohne Klasse: "
                           f"Gemini {comp.metrics['gemini'].no_class}, Jev {comp.metrics['jev'].no_class}")
         else:
             from . import classify
 
             tick(classifier, 0, 0, f"Klassifizieren mit {LABELS[classifier]} gegen ETIM {etim_version}")
-            rows = classify.run(job_dir, etim_model, classifier=classifier)
+            rows = classify.run(job_dir, etim_model, classifier=classifier,
+                                progress=tick, fresh=fresh)
             n_none = sum(1 for r in rows if not r.decision.class_id)
             tick(classifier, len(rows), len(rows), "fertig")
             st.message = (f"{len(rows)} Artikel mit {LABELS[classifier]} klassifiziert — "
                           f"{n_none} ohne Klasse, {sum(r.needs_review for r in rows)} zur Prüfung")
         st.log.append(st.message)
         st.state = "done"
+    except RunCancelled:
+        st.state = "cancelled"
+        st.message = (f"Abgebrochen nach {st.done} von {st.total} Artikeln. "
+                      "Der Zwischenstand ist gesichert — ein neuer Lauf setzt dort auf.")
+        st.log.append(st.message)
     except BaseException as e:  # noqa: BLE001 — der Fehler muss ins Dashboard, nicht ins Nichts
         st.state = "error"
         st.error = f"{type(e).__name__}: {e}"
         st.log.append(st.error)
         traceback.print_exc()
     finally:
+        st._t1 = time.monotonic()
         st.finished = datetime.now(timezone.utc).isoformat(timespec="seconds")

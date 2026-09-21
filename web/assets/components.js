@@ -204,30 +204,55 @@ export function DropZone({ hint, accept, onFile, disabled }) {
 }
 
 /** Fortschritt eines Laufs: welche Stufe laeuft, wie weit, und was zuletzt geschah. */
-export function RunProgress(run) {
+export function RunProgress(run, { onCancel } = {}) {
   if (!run || run.state === 'idle') return null;
   const pct = run.total ? Math.min(1, run.done / run.total) : null;
-  const tone = run.state === 'error' ? 'crit' : run.state === 'done' ? 'ok' : 'accent';
+  const tone = run.state === 'error' ? 'crit'
+    : run.state === 'cancelled' ? 'warn'
+    : run.state === 'done' ? 'ok' : 'accent';
+  const label = { error: 'Fehler', cancelled: 'Abgebrochen', done: 'Fertig' }[run.state] || 'Läuft';
+  const running = run.state === 'running';
+
   return el('div', { class: `run run--${tone}` },
     el('div', { class: 'run__head' },
-      Badge(run.state === 'error' ? 'Fehler' : run.state === 'done' ? 'Fertig' : 'Läuft',
-            tone === 'accent' ? 'accent' : tone, { dot: run.state === 'running' }),
+      Badge(label, tone === 'accent' ? 'accent' : tone, { dot: running }),
       run.classifier_label ? el('span', { class: 'run__model' }, run.classifier_label) : null,
       run.etim_version ? el('span', { class: 'run__model' }, `ETIM ${run.etim_version}`) : null,
-      el('div', { class: 'run__msg' }, run.message || run.stage_label || ''),
-      pct === null ? null : el('span', { class: 'run__count num' }, `${run.done}/${run.total}`),
+      el('div', { class: 'run__spacer' }),
+      running && onCancel ? Button(run.cancel_requested ? 'wird beendet …' : 'Abbrechen', {
+        size: 'sm', variant: 'warn', disabled: run.cancel_requested || null, onClick: onCancel,
+      }) : null,
     ),
-    el('div', { class: 'run__stages' }, (run.stages || []).map(s =>
-      el('span', {
-        class: `run__stage${s.key === run.stage ? ' is-now' : ''}${s.active ? '' : ' is-off'}`,
-      }, s.label))),
+
+    pct === null ? null : el('div', { class: 'run__numbers' },
+      el('span', { class: 'run__pct num' }, `${Math.round(pct * 100)} %`),
+      el('span', { class: 'run__of num' }, `${run.done} von ${run.total}`),
+      el('div', { class: 'run__spacer' }),
+      run.elapsed_s ? el('span', { class: 'run__time' }, `${fmtDuration(run.elapsed_s)} gelaufen`) : null,
+      run.eta_s ? el('span', { class: 'run__time run__time--eta' }, `noch ca. ${fmtDuration(run.eta_s)}`) : null,
+    ),
     pct === null ? null : el('div', { class: 'run__track' },
       el('div', { class: 'run__fill', style: `width:${pct * 100}%` })),
+
+    el('div', { class: 'run__msg' }, run.message || run.stage_label || ''),
+
+    el('div', { class: 'run__stages' }, (run.stages || []).map(s => el('span', {
+      class: `run__stage${s.key === run.stage ? ' is-now' : ''}${s.active ? '' : ' is-off'}`,
+    }, s.label))),
+
     run.error ? el('pre', { class: 'run__error' }, run.error) : null,
     run.log?.length ? el('details', { class: 'run__log' },
-      el('summary', {}, 'Verlauf'),
-      el('pre', {}, run.log.join('\n'))) : null,
+      el('summary', {}, `Verlauf (${run.log.length})`),
+      el('pre', {}, run.log.slice(-40).join('\n'))) : null,
   );
+}
+
+/** Sekunden lesbar: "45 s", "3:20 min", "1:05 h". */
+export function fmtDuration(sec) {
+  const s = Math.max(0, Math.round(Number(sec) || 0));
+  if (s < 60) return `${s} s`;
+  if (s < 3600) return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} min`;
+  return `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')} h`;
 }
 
 /** Eine Kennzahl im Modellvergleich: links Gemini, rechts Jev. */
