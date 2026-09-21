@@ -23,6 +23,26 @@ from . import config, jev, studio, versions
 WEB = config.ROOT / "web"
 DECISIONS = "review.decisions.json"
 
+
+def _code_mtime() -> float:
+    """Neueste Aenderung am Python-Code dieses Programms."""
+    try:
+        return max(p.stat().st_mtime for p in Path(__file__).parent.glob("*.py"))
+    except (OSError, ValueError):
+        return 0.0
+
+
+# Stand des Codes beim Start. Die Oberflaeche wird bei jedem Aufruf frisch von
+# der Platte gelesen, der Python-Code aber nur einmal beim Start. Nach einem
+# `git pull` bekommt der Browser also neue Knoepfe an einem alten Server — und
+# eine neue Route antwortet dann mit "Unbekannte Route". Dieser Vergleich macht
+# daraus eine verstaendliche Ansage.
+_STARTED_WITH = _code_mtime()
+
+
+def code_is_stale() -> bool:
+    return _code_mtime() > _STARTED_WITH + 1
+
 FILE_DESC = {
     "catalog.bmecat.xml": "BMEcat 2005 · Lieferdatei für den Großhändler",
     "enriched.json": "Merkmale mit Quellzitat und Konfidenz",
@@ -198,6 +218,7 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             if route == "/api/jobs":
                 return self._json({
+                    "stale": code_is_stale(),
                     "jobs": studio.list_jobs(self.out_root),
                     "default_job": self.default_job,
                     "jev": jev.status(),
@@ -225,7 +246,14 @@ class Handler(SimpleHTTPRequestHandler):
                                             for v in versions.available()}})
         except studio.UploadError as e:
             return self._fail(400, str(e))
-        return self._fail(404, f"Unbekannte Route: {route}")
+        return self._fail(404, self._unknown_route(route))
+
+    def _unknown_route(self, route: str) -> str:
+        if code_is_stale():
+            return (f"Diese Funktion gibt es im laufenden Server noch nicht ({route}). "
+                    "Der Programmcode auf der Platte ist neuer als der laufende Server — "
+                    "bitte das Cockpit einmal neu starten.")
+        return f"Unbekannte Route: {route}"
 
     # ------------------------------------------------------------------- POST
 
@@ -279,7 +307,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self._fail(404, str(e))
         except Exception as e:  # noqa: BLE001 — ein Fehler gehört ins Dashboard, nicht nur ins Terminal
             return self._fail(500, f"{type(e).__name__}: {e}")
-        return self._fail(404, f"Unbekannte Route: {route}")
+        return self._fail(404, self._unknown_route(route))
 
     def _upload(self):
         limit = config.MAX_UPLOAD_MB * 1024 * 1024

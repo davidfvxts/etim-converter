@@ -264,3 +264,4 @@
 }
 .jevcheck .btn { margin-left: auto; }
 .jevcheck__result { flex-basis: 100%; font-size: var(--fs-xs); }
+.stalebar { padding: var(--s-5) var(--s-8) 0; }

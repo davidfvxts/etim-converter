@@ -386,6 +386,7 @@ async function loadJobs() {
     state.jev = d.jev || state.jev;
     if (d.classifier && !state.classifierTouched) state.runOpts.classifier = d.classifier;
     state.etimVersions = d.etim_versions || [];
+    state.stale = !!d.stale;
     if (!state.runOpts.etim_version) {
       // Vorauswahl: die eingestellte Version, sonst die erste einsatzbereite.
       const ready = state.etimVersions.filter(v => v.ready);
@@ -981,7 +982,15 @@ function Topbar() {
 function render() {
   const root = document.getElementById('app');
   const view = VIEWS.find(v => v.key === state.view);
-  root.replaceChildren(Rail(), el('div', { class: 'main' }, Topbar(), view.render()));
+  const stale = state.stale
+    ? Note('Das Cockpit wurde aktualisiert, der laufende Server ist aber noch der alte. ' +
+           'Neue Funktionen antworten deshalb mit „gibt es nicht“. ' +
+           'Bitte das Cockpit einmal beenden und neu starten.', 'warn')
+    : null;
+  root.replaceChildren(Rail(),
+    el('div', { class: 'main' }, Topbar(),
+      stale ? el('div', { class: 'stalebar' }, stale) : null,
+      view.render()));
 }
 
 /* ------------------------------------------------------------ Entscheidungen */

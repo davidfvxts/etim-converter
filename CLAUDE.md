@@ -173,6 +173,13 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
       Wahrscheinlichkeitsverteilung gebauter Satz; erfundene EC-Codes kann er nicht
       enthalten, weil nur Optionen aus dem Kandidatenfeld vorkommen.
       Tests: **48 statt 45**, inklusive Jev-Ausfall waehrend eines echten Klassifizierungslaufs.
+- [x] **"Unbekannte Route: /api/jev-check" nach einem `git pull`** (21.9.2026). Zweiter Teil
+      desselben Problems: die Oberflaeche wird bei jedem Aufruf frisch von der Platte gelesen,
+      der Python-Code aber nur beim Start. Nach einem Pull sieht David also neue Knoepfe an
+      einem alten Server, und jede neue Route antwortet mit 404. Der Server merkt sich jetzt
+      beim Start die neueste mtime seiner eigenen `.py`-Dateien; ist der Code auf der Platte
+      spaeter neuer, meldet `/api/jobs` `stale: true`, die Oberflaeche zeigt ein Warnband und
+      der 404-Text sagt "bitte das Cockpit neu starten" statt "Unbekannte Route".
 - [x] **Cockpit lieferte nach einem `git pull` die alte Oberflaeche aus** (21.9.2026).
       David meldete "Jev pruefen funktioniert nicht" — der Knopf war nach dem Pull schlicht
       nicht da. Ursache: `SimpleHTTPRequestHandler` schickt nur `Last-Modified` und kein
