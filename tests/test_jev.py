@@ -141,3 +141,39 @@ def test_error_text_never_leaks_the_secret(monkeypatch):
     monkeypatch.setattr(config, "CF_API_TOKEN", "")
     text = jev._explain(500, "upstream said: Bearer supergeheim-12345678 rejected")
     assert "supergeheim" not in text and "<secret>" in text
+
+
+def test_selftest_reports_missing_access_instead_of_raising(monkeypatch):
+    """Der Prüfbefehl muss eine Diagnose liefern, keinen Stacktrace."""
+    monkeypatch.setattr(config, "DRY_RUN", False)
+    monkeypatch.setattr(config, "JEV_TRANSPORT", "cloudflare")
+    monkeypatch.setattr(config, "CF_ACCOUNT_ID", "")
+    monkeypatch.setattr(config, "CF_API_TOKEN", "")
+
+    res = jev.selftest()
+    assert res["ok"] is False
+    assert "CLOUDFLARE_ACCOUNT_ID" in res["error"]
+
+
+def test_selftest_makes_a_real_minimal_call(live, monkeypatch):
+    """Mit Zugang geht genau ein kleiner Choice-Aufruf raus."""
+    monkeypatch.setattr(config, "JEV_TRANSPORT", "cloudflare")
+    monkeypatch.setattr(config, "CF_ACCOUNT_ID", "acc")
+    monkeypatch.setattr(config, "CF_API_TOKEN", "tok")
+    monkeypatch.setattr(jev, "_post", lambda url, body, headers, timeout: live.update(body=body) or {
+        "model": "jev-1.13.0", "usage": {"input_tokens": 40, "output_tokens": 8},
+        "answers": {"kind": {"type": "choice", "choice": "valve", "confidence": 0.99,
+                             "probabilities": {"valve": 0.99, "cable": 0.01}}}})
+
+    res = jev.selftest()
+    assert res["ok"] and res["choice"] == "valve" and res["simulated"] is False
+    q = live["body"]["input"]["questions"]
+    assert list(q) == ["kind"] and q["kind"]["type"] == "choice"
+    assert jev.NONE_OPTION_SELFTEST in q["kind"]["criteria"], "auch hier eine Ausweichoption"
+
+
+def test_selftest_marks_dry_run_as_simulation(monkeypatch):
+    """Ohne Zugang, aber im Trockenlauf: Antwort ja — als Simulation gekennzeichnet."""
+    monkeypatch.setattr(config, "DRY_RUN", True)
+    res = jev.selftest()
+    assert res["ok"] and res["simulated"] is True and res["choice"] == "valve"

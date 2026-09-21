@@ -101,8 +101,38 @@ und das Secret wird nie ausgegeben. Vor dem Schreiben entsteht `.env.bak`.
 
 Die Jev-Aufrufe laufen dann über den Worker in `worker/` (`typesafe/jev` per Workers-AI-Binding),
 die Zugangsdaten liegen als Cloudflare-Secret dort und nicht in der App. Was der Worker genau tut
-und warum er kein offener Proxy ist: `worker/README.md`. Alternativ `ETIM_JEV_TRANSPORT=cloudflare`
-für den direkten Weg über die REST-API.
+und warum er kein offener Proxy ist: `worker/README.md`.
+
+### Alternative ohne Worker: direkt an Workers AI
+
+Wer Node.js und `wrangler` nicht einrichten will, spricht Workers AI direkt an — dann entfällt
+`make jev` komplett:
+
+1. Im Cloudflare-Dashboard auf die Seite **Workers AI**, dort **Use REST API**.
+2. **Create a Workers AI API Token** → Token kopieren. (Ein selbst gebautes Token braucht
+   die Berechtigungen `Workers AI – Read` **und** `Workers AI – Edit`.)
+3. Auf derselben Seite die **Account ID** kopieren.
+4. In die `.env`:
+
+```
+ETIM_JEV_TRANSPORT=cloudflare
+CLOUDFLARE_ACCOUNT_ID=<Account ID>
+CLOUDFLARE_API_TOKEN=<Token>
+```
+
+Der Unterschied ist nur, wo die Zugangsdaten liegen: beim Worker als Cloudflare-Secret, hier in
+der `.env` auf dem eigenen Rechner (gitignored). Für Messläufe auf dem eigenen Laptop ist das in
+Ordnung; sobald jemand anderes die Pipeline bedient, ist der Worker der bessere Ort.
+
+### Prüfen, ob Jev antwortet
+
+```bash
+make jev-check
+```
+
+Macht einen echten Mini-Aufruf (zwei Optionen, Bruchteil eines Cents) und meldet Modell, Antwort,
+Laufzeit und Kosten — oder sagt im Klartext, was in der `.env` fehlt. Egal, welcher der beiden
+Wege eingerichtet ist.
 
 ### Trefferquote: Referenzklassen festlegen
 

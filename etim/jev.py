@@ -29,6 +29,9 @@ MAX_CHOICE_OPTIONS = 255
 MAX_SCORE_LEVELS = 10
 CONTEXT_TOKENS = 32_000
 
+# Ausweichoption des Selbsttests. compare.py bringt fuer die Klassenwahl eine eigene mit.
+NONE_OPTION_SELFTEST = "neither"
+
 _fake_handlers: dict[str, Callable[[dict, dict], dict]] = {}
 
 
@@ -228,3 +231,40 @@ def ask(name: str, state: Any, questions: dict[str, dict], retries: int = 4) -> 
         print(f"    jev/{name}: {last}, neuer Versuch in {delay:.0f}s ({attempt + 1}/{retries - 1})")
         time.sleep(delay)
     raise JevError(last or "Jev-Aufruf fehlgeschlagen")
+
+
+def selftest() -> dict:
+    """Einen echten Mini-Aufruf machen und sagen, was dabei herauskam.
+
+    Zwei Optionen, eine triviale Frage — kostet einen Bruchteil eines Cents und
+    beantwortet die einzige Frage, die vor einem Lauf zaehlt: kommt eine Antwort
+    von Jev zurueck, ja oder nein.
+    """
+    st = status()
+    ok, reason = configured()
+    if not ok:
+        return {**st, "ok": False, "error": reason}
+    if config.DRY_RUN and "selftest" not in _fake_handlers:
+        # Im Trockenlauf soll der Befehl zeigen, dass die Kette steht — nicht an
+        # einem fehlenden Fake scheitern. Die Antwort ist als simuliert markiert.
+        register_fake("selftest", lambda state, questions: {
+            "kind": {"type": "choice", "choice": "valve", "confidence": 1.0,
+                     "probabilities": {"valve": 1.0, "cable": 0.0, NONE_OPTION_SELFTEST: 0.0}},
+        })
+    try:
+        res = ask("selftest", {"item": "A ball valve DN 20 for drinking water"}, {
+            "kind": choice(
+                "Which of these describes the item?",
+                {"valve": "A valve of any kind", "cable": "An electrical cable",
+                 NONE_OPTION_SELFTEST: "Neither of the above"},
+            ),
+        })
+    except JevError as e:
+        return {**st, "ok": False, "error": str(e)}
+    pick, conf, probs = res.choice_of("kind")
+    return {
+        **st, "ok": True, "model": res.model, "choice": pick,
+        "confidence": conf, "probabilities": probs,
+        "latency_ms": res.latency_ms, "usage": res.usage,
+        "cost_usd": res.cost_usd, "simulated": res.simulated,
+    }

@@ -109,6 +109,7 @@ venv voraus (`source .venv/bin/activate`).
 ```
 make setup                      # venv + deps (einmalig)
 make jev                        # Worker deployen, .env einrichten
+make jev-check                  # echter Mini-Aufruf: antwortet Jev?
 make load-model                 # ETIM-CSV -> SQLite + Embeddings
 make studio                     # Cockpit im Browser
 make compare JOB=strawa         # Gemini gegen Jev

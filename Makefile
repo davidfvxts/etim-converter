@@ -1,4 +1,4 @@
-.PHONY: setup check test lint eval jev load-model studio compare reference
+.PHONY: setup check test lint eval jev jev-check load-model studio compare reference
 
 # Alles laeuft ueber das venv. Auf macOS gibt es kein "python", nur "python3" —
 # der direkte Pfad ins venv erspart sowohl das Aktivieren als auch den Unterschied.
@@ -33,6 +33,9 @@ eval: check
 
 jev:                        ## Cloudflare-Worker deployen und .env einrichten
 	bash scripts/setup_jev.sh
+
+jev-check: check            ## Jev-Zugang mit einem echten Mini-Aufruf pruefen
+	$(PY) -m etim jev-check
 
 load-model: check           ## ETIM-CSV nach SQLite + Klassen-Embeddings
 	$(PY) -m etim load-model data/etim

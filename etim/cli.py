@@ -49,6 +49,8 @@ def main(argv=None):
     s = sub.add_parser("reference", help="Gerüst für reference.json anlegen (Klassen bleiben leer)")
     s.add_argument("job_dir", type=Path, help="Ordner unter out/, z. B. out/strawa")
 
+    sub.add_parser("jev-check", help="Jev-Zugang mit einem echten Mini-Aufruf prüfen")
+
     s = sub.add_parser("ui", help="Prüf-Cockpit im Browser öffnen")
     s.add_argument("job_dir", type=Path, help="Ordner unter out/, z. B. out/demo — oder out/ selbst")
     s.add_argument("--port", type=int, default=8000)
@@ -86,6 +88,33 @@ def main(argv=None):
         from .ui import run as run_ui
 
         run_ui(a.out or config.OUT, a.port, not a.no_open)
+        return
+    if a.cmd == "jev-check":
+        import json as _json
+
+        from . import jev
+
+        res = jev.selftest()
+        print(f"Transport:  {res['transport']}")
+        print(f"Zustand:    {res['reason']}")
+        if not res["ok"]:
+            print(f"\nNICHT BEREIT: {res['error']}")
+            raise SystemExit(1)
+        if res.get("simulated"):
+            print("\nTrockenlauf — die Antwort ist simuliert, nicht von Jev.")
+        else:
+            print(f"Modell:     {res['model']}")
+        print(f"Antwort:    {res['choice']}  (Konfidenz {res['confidence']:.0%})")
+        print(f"Verteilung: {_json.dumps(res['probabilities'], ensure_ascii=False)}")
+        print(f"Laufzeit:   {res['latency_ms']} ms, {res['usage'].get('input_tokens', 0)} Tokens, "
+              f"${res['cost_usd']:.6f}")
+        if res.get("simulated"):
+            print("\nDie Kette steht — aber gemessen ist hier nichts. "
+                  "Für echte Antworten ETIM_DRY_RUN=0 setzen.")
+        elif res["choice"] == "valve":
+            print("\nJev ist bereit.")
+        else:
+            print("\nAntwort erreicht, aber unerwartet — bitte melden.")
         return
     if a.cmd == "reference":
         from .compare import reference_skeleton
