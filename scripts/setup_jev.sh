@@ -11,11 +11,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="$ROOT/.env"
 WORKER_DIR="$ROOT/worker"
-WORKER_NAME="$(grep -E '^name\s*=' "$WORKER_DIR/wrangler.toml" | head -1 | cut -d'"' -f2)"
 
 say()  { printf '\n\033[1m%s\033[0m\n' "$*"; }
 info() { printf '  %s\n' "$*"; }
 die()  { printf '\n\033[31mAbbruch:\033[0m %s\n' "$*" >&2; exit 1; }
+
+[ -f "$WORKER_DIR/wrangler.toml" ] || die "worker/wrangler.toml nicht gefunden.
+  Das Skript gehoert ins Projektverzeichnis — am einfachsten: 'make jev'."
+WORKER_NAME="$(grep -E '^name[[:space:]]*=' "$WORKER_DIR/wrangler.toml" | head -1 | cut -d'"' -f2)"
+[ -n "$WORKER_NAME" ] || die "In worker/wrangler.toml steht kein name."
 
 # --- Voraussetzungen ---------------------------------------------------------
 say "1/5  Voraussetzungen"

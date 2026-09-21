@@ -4,19 +4,35 @@ Herstellerkatalog rein → ETIM-klassifizierte Produktdaten als BMEcat raus.
 
 ## Quickstart (Tag 1)
 
+**Alle Befehle im Projektordner ausführen** — nicht im Home-Verzeichnis.
+
 ```bash
-make setup
+cd /pfad/zu/etim-converter
+make setup                      # einmalig: virtuelle Umgebung + Abhängigkeiten
 cp .env.example .env            # GEMINI_API_KEY eintragen
-bash scripts/download_etim.sh   # ETIM 10.0 (EN) + BMEcat-Guideline + xChange nach data/
-python -m etim inspect data/etim
-python -m etim load-model data/etim
-python -m etim run beispiele/katalog.pdf --job demo --supplier "Muster GmbH"
-open out/demo/report.md
-python -m etim studio            # Cockpit über allen Jobs: Katalog einspielen, Lauf starten
-python -m etim ui out/demo       # dasselbe Cockpit, direkt auf einem Job
+bash scripts/download_etim.sh   # ETIM 10.0 (EN) + BMEcat-Guideline nach data/
+make jev                        # Cloudflare-Worker deployen, .env für Jev einrichten
+make load-model                 # ETIM-CSV -> SQLite + Klassen-Embeddings
+make studio                     # Cockpit im Browser
 ```
 
-Ohne API-Key: `ETIM_DRY_RUN=1 make test` läuft die ganze Pipeline mit Fakes gegen die Mini-Fixture.
+Die `make`-Ziele rufen Python aus `.venv/` auf. Du musst die Umgebung also **nicht**
+aktivieren — und auf macOS nicht daran denken, dass `python` dort `python3` heißt.
+Wer lieber direkt arbeitet: `source .venv/bin/activate`, danach funktioniert
+`python -m etim …` wie in dieser Datei beschrieben.
+
+Weitere Ziele: `make compare JOB=strawa`, `make reference JOB=strawa`, `make test`, `make eval`.
+
+Ohne API-Key: `make test` läuft die ganze Pipeline mit Fakes gegen die Mini-Fixture.
+
+### Wenn etwas hakt (macOS)
+
+| Meldung | Ursache und Abhilfe |
+|---|---|
+| `You have not agreed to the Xcode and Apple SDKs license` | Apples Kommandozeilen-Werkzeuge (auch `git` und `make`) sind gesperrt, bis die Lizenz bestätigt ist: `sudo xcodebuild -license accept` |
+| `No such file or directory` bei `scripts/…` | Du bist nicht im Projektordner. Erst `cd` dorthin. |
+| `command not found: python` | macOS hat nur `python3`. Die `make`-Ziele lösen das; sonst `source .venv/bin/activate`. |
+| `command not found: make` | Kommandozeilen-Werkzeuge fehlen: `xcode-select --install` |
 
 ## Ausgaben je Job (`out/<job>/`)
 

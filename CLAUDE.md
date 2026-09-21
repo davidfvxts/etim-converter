@@ -101,8 +101,18 @@ mit einem Sprachhinweis — gemessen wird, nicht angenommen.
 
 ## Befehle
 
+Alle `make`-Ziele rufen Python aus `.venv/` auf — auf macOS gibt es kein `python`,
+nur `python3`, und ohne aktivierte Umgebung schlägt jeder direkte Aufruf fehl.
+Darum ist `make` der dokumentierte Weg; `python -m etim …` setzt ein aktiviertes
+venv voraus (`source .venv/bin/activate`).
+
 ```
-make setup                      # venv + deps
+make setup                      # venv + deps (einmalig)
+make jev                        # Worker deployen, .env einrichten
+make load-model                 # ETIM-CSV -> SQLite + Embeddings
+make studio                     # Cockpit im Browser
+make compare JOB=strawa         # Gemini gegen Jev
+make reference JOB=strawa       # Gerüst für reference.json
 make test                       # pytest mit DRY_RUN (läuft ohne API-Key)
 python -m etim inspect data/etim           # zeigt, welche CSV-Dateien/Spalten da sind
 python -m etim load-model data/etim        # baut data/cache/etim.sqlite + Embeddings
@@ -158,6 +168,14 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
       ist laut David aber genau diese Vorschaltung. Kein offener Proxy: nur `POST /jev` und
       `GET /health`, beide mit Shared Secret (SHA-256 → `timingSafeEqual`), Modell fest im
       Quelltext, Rumpf muss die Form eines System-One-Aufrufs haben.
+- [x] **macOS-Stolperstein behoben** (21.9.2026, aus Davids erstem Anlauf gelernt).
+      `python -m etim …` schlaegt auf seinem Mac fehl: dort gibt es nur `python3`, und ohne
+      aktiviertes venv findet die Shell gar nichts. Das Makefile rief ebenfalls blankes
+      `python` auf. Jetzt laeuft alles ueber `.venv/bin/python`, und es gibt Ziele fuer den
+      ganzen Weg: `make setup | jev | load-model | studio | compare JOB=x | reference JOB=x`.
+      Fehlt das venv, sagt `make` das im Klartext statt mit einem Pfadfehler.
+      In der README steht eine kleine Fehlertabelle fuer macOS (Xcode-Lizenz sperrt `git`
+      und `make`, falscher Ordner, fehlendes `python`).
 - [x] **Einrichtung auf einen Befehl eingedampft** (21.9.2026): `bash scripts/setup_jev.sh`
       macht Anmeldung, Secret, Deploy, `.env` und Funktionstest in einem Durchgang; wiederholbar,
       Secret wird nie ausgegeben, `.env.bak` als Sicherung. Dazu `python -m etim reference
