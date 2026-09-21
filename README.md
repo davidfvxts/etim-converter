@@ -158,6 +158,16 @@ Der Unterschied ist nur, wo die Zugangsdaten liegen: beim Worker als Cloudflare-
 der `.env` auf dem eigenen Rechner (gitignored). Für Messläufe auf dem eigenen Laptop ist das in
 Ordnung; sobald jemand anderes die Pipeline bedient, ist der Worker der bessere Ort.
 
+### Was ist eigentlich eingetragen?
+
+```bash
+make env-show
+```
+
+Zeigt den gewählten Jev-Weg und alle Werte aus der `.env` — Schlüssel und Secrets nur maskiert
+(letzte vier Zeichen). Nützlich nach `make jev`: das Skript trägt Adresse und Secret selbst ein,
+man tippt keine Zugangsdaten und sieht deshalb auch nie, was dort gelandet ist.
+
 ### Prüfen, ob Jev antwortet
 
 ```bash

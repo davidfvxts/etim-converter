@@ -1,4 +1,4 @@
-.PHONY: setup check env test lint eval jev jev-check load-model studio compare reference
+.PHONY: setup check env env-show test lint eval jev jev-check load-model studio compare reference
 
 # Alles laeuft ueber das venv. Auf macOS gibt es kein "python", nur "python3" —
 # der direkte Pfad ins venv erspart sowohl das Aktivieren als auch den Unterschied.
@@ -33,6 +33,9 @@ eval: check
 
 env:                        ## Zugangsdaten gefuehrt eintragen (verdeckte Eingabe)
 	bash scripts/setup_env.sh
+
+env-show:                   ## Zeigen, was in der .env steht (Secrets maskiert)
+	bash scripts/show_env.sh
 
 jev:                        ## Cloudflare-Worker deployen und .env einrichten
 	bash scripts/setup_jev.sh

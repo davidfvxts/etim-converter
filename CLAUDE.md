@@ -109,6 +109,7 @@ venv voraus (`source .venv/bin/activate`).
 ```
 make setup                      # venv + deps (einmalig)
 make env                        # Zugangsdaten gefuehrt eintragen (verdeckte Eingabe)
+make env-show                   # zeigen, was eingetragen ist (Secrets maskiert)
 make jev                        # Worker deployen, .env einrichten
 make jev-check                  # echter Mini-Aufruf: antwortet Jev?
 make load-model                 # ETIM-CSV -> SQLite + Embeddings
@@ -200,6 +201,14 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
       Fehlt das venv, sagt `make` das im Klartext statt mit einem Pfadfehler.
       In der README steht eine kleine Fehlertabelle fuer macOS (Xcode-Lizenz sperrt `git`
       und `make`, falscher Ordner, fehlendes `python`).
+- [x] **`make env-show`** (21.9.2026). David fragte, wo die Cloudflare-Keys eigentlich
+      eingetragen seien — er hatte nie welche getippt. Genau richtig: `make jev` erzeugt das
+      Secret selbst, hinterlegt es beim Worker und schreibt es in die `.env`; auf dem
+      Worker-Weg wird gar kein `CLOUDFLARE_API_TOKEN` gebraucht (wrangler meldet sich per
+      Browser an). Der neue Befehl zeigt den gewaehlten Weg und alle Werte, Secrets maskiert.
+      **Fallstrick dabei behoben:** `stat -f %Lp` (macOS) vor `stat -c %a` (GNU) zu probieren
+      ist falsch — unter Linux ist `stat -f` der Dateisystem-Status und liefert *erfolgreich*
+      voellig anderen Text, der Fallback greift also nie. GNU-Form zuerst, beide Faelle geprueft.
 - [x] **`make env`: Zugangsdaten gefuehrt eintragen** (21.9.2026). David hatte den
       Cloudflare-Token und wollte ihn moeglichst einfach eintragen — ohne ihn in den Chat zu
       schicken oder die `.env` von Hand zu oeffnen. Der Dialog fragt Gemini-Schluessel,
