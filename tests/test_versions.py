@@ -57,7 +57,7 @@ def test_status_names_what_is_missing(tmp_path, monkeypatch):
     assert not st["ready"]
     # Der Hinweis wird genau dann gelesen, wenn unklar ist, wo der Ordner liegt —
     # er muss den absoluten Pfad und den naechsten Befehl nennen.
-    assert str(tmp_path / "downloads") in st["missing"]
+    assert str(tmp_path / "data" / "downloads") in st["missing"]
     assert "make load-model ETIM=9.0" in st["missing"]
 
     (tmp_path / "data" / "etim" / "9.0").mkdir(parents=True)
