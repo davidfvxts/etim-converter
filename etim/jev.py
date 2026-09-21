@@ -114,6 +114,12 @@ class JevUnavailable(JevError):
     """
 
 
+def _is_permanent(detail: str) -> bool:
+    """Fehler, die sich durch Wiederholen nie beheben — Guthaben, Kontingent."""
+    low = (detail or "").lower()
+    return ("insufficient" in low and "credit" in low) or "quota exceeded" in low
+
+
 def _why(e: BaseException) -> str:
     """Der eigentliche Grund hinter einem URLError — nicht nur die Ausnahmeklasse.
 
@@ -227,6 +233,14 @@ def _redact(text: str) -> str:
 
 def _explain(status_code: int, detail: str) -> str:
     """Fehlertext ohne Zugangsdaten — er landet im Dashboard und im Log."""
+    low_detail = detail.lower()
+    if "insufficient" in low_detail and "credit" in low_detail:
+        return ("Cloudflare-Guthaben aufgebraucht. `typesafe/jev` ist ein Fremdmodell und wird "
+                "ueber AI-Gateway-Guthaben abgerechnet (Unified Billing), nicht ueber das "
+                "normale Workers-AI-Kontingent. Aufladen im Dashboard unter AI → AI Gateway → "
+                "Credits. Groessenordnung: ein Lauf ueber 250 Artikel kostet rund $0,25 "
+                "(0,042 $ je Mio. Input-Tokens, Antwort kostenlos); auf gekaufte Credits "
+                "kommen 5 % Aufschlag.")
     # Cloudflare blockt an der Kante, bevor der Worker ueberhaupt laeuft. Die
     # Meldung darf dann nicht auf das Token zeigen — da ist nichts falsch.
     if status_code == 403 and "1010" in detail:
@@ -298,6 +312,10 @@ def ask(name: str, state: Any, questions: dict[str, dict], retries: int = 4) -> 
                 detail = (e.read().decode("utf-8", "replace") or "")[:300]
             except Exception:  # noqa: BLE001
                 pass
+            if _is_permanent(detail):
+                # Fehlendes Guthaben geht von selbst nicht weg. Wiederholen kostet
+                # nur Zeit; der ganze Lauf soll sofort stehen bleiben.
+                raise JevUnavailable(_explain(e.code, detail)) from None
             if e.code not in _TRANSIENT_STATUS or attempt == retries - 1:
                 raise JevError(_explain(e.code, detail)) from None
             last = _explain(e.code, "")

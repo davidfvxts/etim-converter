@@ -173,6 +173,21 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
       Wahrscheinlichkeitsverteilung gebauter Satz; erfundene EC-Codes kann er nicht
       enthalten, weil nur Optionen aus dem Kandidatenfeld vorkommen.
       Tests: **48 statt 45**, inklusive Jev-Ausfall waehrend eines echten Klassifizierungslaufs.
+- [x] **Kette steht — es fehlt nur noch Guthaben** (21.9.2026). Nach dem User-Agent-Fix kam
+      `502 {"error":"Workers AI: 2021: Insufficient AI Gateway credits"}`. Das ist der
+      **eigene Worker**, der die Meldung von Workers AI durchreicht: Anfrage angekommen,
+      Secret akzeptiert, `env.AI.run` aufgerufen. **`typesafe/jev` ist ein Fremdmodell** und
+      wird laut Cloudflare-Doku ueber **Unified Billing** mit Vorabguthaben abgerechnet, nicht
+      ueber das normale Workers-AI-Kontingent; Fremdmodell-Anfragen laufen dabei ueber das
+      Standard-Gateway des Kontos, das beim ersten Aufruf automatisch entsteht.
+      Aufladen: Dashboard → AI → AI Gateway → Credits (5 % Aufschlag auf gekaufte Credits).
+      **Groessenordnung:** rund 25.000 Input-Tokens je Artikel (254 Kandidaten mit
+      strukturierten Beschreibungen), bei 0,042 $/Mio. also ~$0,25 fuer 250 Artikel und ~$5
+      fuer 5.000. Mit Merkmalsvergleich etwa das Doppelte.
+      **Zwei Fixes dazu:** die Meldung nennt jetzt Ursache, Ort und Groessenordnung statt
+      "HTTP 502"; und fehlendes Guthaben gilt als dauerhafter Fehler (`_is_permanent`) und
+      bricht den Lauf sofort ab — vorher waere 502 als voruebergehend viermal je Artikel
+      wiederholt worden. Ein gewoehnlicher 502 wird weiter wiederholt. Tests: **69 statt 67**.
 - [x] **Der eigentliche Jev-Blocker gefunden: Cloudflares Browser Integrity Check**
       (21.9.2026). Nach dem Zertifikats-Fix kam `403 … error code: 1010`. Das ist **nicht**
       der Worker und **nicht** das Token — die Anfrage erreicht den Worker gar nicht.

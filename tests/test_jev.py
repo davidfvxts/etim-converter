@@ -4,6 +4,7 @@ Die Anfrageform ist hier festgenagelt, weil sie gegen eine fremde API läuft:
 wenn sich an `state`/`questions`, am Modellnamen oder am Auspacken der Antwort
 etwas verschiebt, soll das ein Test sagen und nicht ein Kundenlauf.
 """
+import io
 import json
 
 import pytest
@@ -298,3 +299,59 @@ def test_cloudflare_edge_block_is_not_blamed_on_the_token():
     # Ein echtes Berechtigungsproblem bleibt beim alten Text.
     andere = jev._explain(403, "insufficient permissions")
     assert "Token-Berechtigung" in andere
+
+
+def test_missing_credits_is_explained_and_stops_the_run(live, monkeypatch):
+    """Fehlendes Guthaben geht durch Wiederholen nie weg — sofort abbrechen.
+
+    Der 502 kommt vom eigenen Worker, der die Meldung von Workers AI durchreicht.
+    Ohne Sonderbehandlung waere das ein 'voruebergehender' Fehler und jeder der
+    250 Artikel wuerde ihn viermal wiederholen.
+    """
+    import urllib.error
+
+    monkeypatch.setattr(config, "JEV_TRANSPORT", "worker")
+    monkeypatch.setattr(config, "JEV_WORKER_URL", "https://w/jev")
+    monkeypatch.setattr(config, "JEV_WORKER_SECRET", "s")
+    jev.reset_failures()
+    versuche = []
+
+    def credits_weg(*a, **k):
+        versuche.append(1)
+        raise urllib.error.HTTPError(
+            "https://w/jev", 502, "Bad Gateway", {},
+            io.BytesIO(b'{"error":"Workers AI: 2021: Insufficient AI Gateway credits"}'))
+
+    monkeypatch.setattr(jev, "_post", credits_weg)
+    monkeypatch.setattr(jev.time, "sleep", lambda s: None)
+
+    with pytest.raises(jev.JevUnavailable) as err:
+        jev.ask("classify", STATE, QUESTIONS)
+
+    assert len(versuche) == 1, f"trotz dauerhaftem Fehler {len(versuche)}-mal versucht"
+    text = str(err.value)
+    assert "Guthaben" in text
+    assert "AI Gateway" in text, "es fehlt der Ort zum Aufladen"
+    assert "0,25" in text, "es fehlt die Groessenordnung"
+
+
+def test_a_real_gateway_hiccup_is_still_retried(live, monkeypatch):
+    """Ein gewoehnlicher 502 bleibt voruebergehend und wird wiederholt."""
+    import urllib.error
+
+    monkeypatch.setattr(config, "JEV_TRANSPORT", "worker")
+    monkeypatch.setattr(config, "JEV_WORKER_URL", "https://w/jev")
+    monkeypatch.setattr(config, "JEV_WORKER_SECRET", "s")
+    jev.reset_failures()
+    versuche = []
+
+    def kurzer_aussetzer(*a, **k):
+        versuche.append(1)
+        raise urllib.error.HTTPError("https://w/jev", 502, "Bad Gateway", {},
+                                     io.BytesIO(b'{"error":"upstream hiccup"}'))
+
+    monkeypatch.setattr(jev, "_post", kurzer_aussetzer)
+    monkeypatch.setattr(jev.time, "sleep", lambda s: None)
+    with pytest.raises(jev.JevError):
+        jev.ask("classify", STATE, QUESTIONS, retries=3)
+    assert len(versuche) == 3, "ein voruebergehender Fehler muss wiederholt werden"
