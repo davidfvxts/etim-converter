@@ -68,6 +68,53 @@ def data_dir(version: str | None = None) -> Path | None:
     return None
 
 
+def find_archive(version: str | None = None) -> Path | None:
+    """Ein noch nicht entpacktes CSV-Release dieser Version finden.
+
+    Gesucht wird in data/downloads/ und data/etim/ nach einem ZIP, dessen Name
+    die Version nennt — so wie die Dateien von etim-international.com heissen
+    (ETIM-9.0-ALL-SECTORS-CSV-METRIC-EI-2022-12-05.zip). Erspart das Entpacken
+    von Hand in den richtigen Unterordner.
+    """
+    v = normalize(version)
+    major = v.split(".")[0]
+    patterns = (f"etim-{v}-", f"etim{v}-", f"etim-{major}.0-", f"etim{major}-")
+    for folder in (config.DATA / "downloads", config.DATA / "etim", config.DATA):
+        if not folder.is_dir():
+            continue
+        for zip_path in sorted(folder.glob("*.zip")):
+            name = zip_path.name.lower()
+            if any(name.startswith(p) or f"-{p}" in name for p in patterns):
+                # "CSV" im Namen trennt das Datenrelease von IXF- und Guideline-ZIPs.
+                if "csv" in name or "sectors" in name:
+                    return zip_path
+    return None
+
+
+def unpack(version: str, archive: Path | None = None) -> Path:
+    """Ein CSV-Release nach data/etim/<version>/ entpacken."""
+    import zipfile
+
+    v = normalize(version)
+    archive = archive or find_archive(v)
+    if not archive:
+        raise SystemExit(
+            f"Kein CSV-Release fuer ETIM {v} gefunden. ZIP nach {config.DATA / 'downloads'}/ "
+            f"legen oder den entpackten Ordner als {config.DATA / 'etim' / v}/ anlegen.")
+    target = config.DATA / "etim" / v
+    target.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(archive) as z:
+        # Nur die CSV-Dateien, ohne Pfade: manche Releases haben einen Unterordner.
+        for member in z.namelist():
+            name = Path(member).name
+            if not name or not name.lower().endswith(_DATA_SUFFIXES):
+                continue
+            with z.open(member) as src, (target / name).open("wb") as dst:
+                dst.write(src.read())
+    print(f"→ {archive.name} nach {target}/ entpackt")
+    return target
+
+
 def db_path(version: str | None = None) -> Path:
     v = normalize(version)
     versioned = config.CACHE / f"etim-{v}.sqlite"

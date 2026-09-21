@@ -82,9 +82,13 @@ data/etim/9.0/    CSV-Release ETIM 9.0
 data/etim/10.0/   CSV-Release ETIM 10.0    (oder direkt in data/etim/)
 ```
 
+Das ZIP muss nicht von Hand entpackt werden: `load-model` sucht in `data/downloads/`,
+`data/etim/` und `data/` nach einem Release, dessen Dateiname die Version nennt — so wie die
+Dateien von etim-international.com heißen — und packt es selbst an die richtige Stelle.
+
 ```bash
 make versions                 # was liegt vor, was fehlt
-make load-model ETIM=9.0      # ETIM 9.0 laden und Embeddings bauen
+make load-model ETIM=9.0      # ZIP finden, entpacken, laden, Embeddings bauen
 make load-model               # Vorgabeversion aus ETIM_VERSION
 python -m etim classify --job demo --etim 9.0
 ```

@@ -43,21 +43,32 @@ Antworte als JSON nach Schema."""
 
 
 def _class_matrix(model: EtimModel) -> tuple[list[str], np.ndarray]:
-    # Je Version ein eigener Cache: Klassen-IDs sind zwischen ETIM-Versionen
-    # nicht stabil, ein geteilter Cache wuerde stillschweigend falsch zuordnen.
+    # Je Version ein eigener Cache. Die ID-Liste allein reicht als Schutz nicht:
+    # zwischen ETIM 8.0 und 9.0 behalten 275 Klassen ihre ID und aendern ihren
+    # Text (EC000024 "Installation box for underfloor-installation" wird
+    # "Device installation insert for subfloor installation"). Bei gleicher
+    # ID-Liste waere so ein veralteter Cache unbemerkt durchgegangen — darum
+    # steht die Version mit im Cache und wird mitgeprueft.
     cache = versions.emb_path(model.version)
     ids = [r["id"] for r in model.classes()]
     if cache.exists():
         z = np.load(cache, allow_pickle=True)
-        # Zeilenzahl mitpruefen: ein Cache aus einem fehlerhaften Lauf haette sonst
-        # stillschweigend falsche Klassen geliefert (siehe llm.embed).
-        if list(z["ids"]) == ids and (config.DRY_RUN == bool(z["dry"])) and z["emb"].shape[0] == len(ids):
+        cached_version = str(z["version"]) if "version" in z.files else ""
+        if (list(z["ids"]) == ids
+                and cached_version == model.version
+                and (config.DRY_RUN == bool(z["dry"]))
+                # Zeilenzahl mitpruefen: ein Cache aus einem fehlerhaften Lauf
+                # haette sonst falsche Klassen geliefert (siehe llm.embed).
+                and z["emb"].shape[0] == len(ids)):
             return ids, z["emb"]
-    print(f"Embeddings für {len(ids)} Klassen berechnen …")
+        if cached_version and cached_version != model.version:
+            print(f"Cache gehoert zu ETIM {cached_version}, gebraucht wird {model.version} — neu berechnen.")
+    print(f"Embeddings für {len(ids)} Klassen (ETIM {model.version}) berechnen …")
     texts = [model.class_text(i) for i in ids]
     emb = llm.embed(texts)
     cache.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(cache, ids=np.array(ids), emb=emb, dry=np.array(config.DRY_RUN))
+    np.savez(cache, ids=np.array(ids), emb=emb, dry=np.array(config.DRY_RUN),
+             version=np.array(model.version))
     return ids, emb
 
 

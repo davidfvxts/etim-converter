@@ -97,9 +97,8 @@ def main(argv=None):
                              f"moeglich: {', '.join(versions.SUPPORTED)}")
         folder = a.folder or versions.data_dir(version)
         if not folder:
-            raise SystemExit(
-                f"Kein CSV-Release fuer ETIM {version} gefunden. Erwartet in "
-                f"{config.DATA / 'etim' / version}/ — oder Ordner als Argument angeben.")
+            # Liegt das ZIP noch ungeoeffnet herum, hier auspacken statt meckern.
+            folder = versions.unpack(version)
         print(f"ETIM {version} aus {folder}")
         build_sqlite(Path(folder), versions.db_path(version), version)
         m = EtimModel(versions.db_path(version), version)

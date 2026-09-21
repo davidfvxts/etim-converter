@@ -207,12 +207,50 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
       Fehlt das venv, sagt `make` das im Klartext statt mit einem Pfadfehler.
       In der README steht eine kleine Fehlertabelle fuer macOS (Xcode-Lizenz sperrt `git`
       und `make`, falscher Ordner, fehlendes `python`).
+- [x] **ETIM 8.0 und 9.0 an echten Daten verifiziert** (21.9.2026, David hat die CSV-Releases
+      geliefert). Der Loader war bis dahin nur gegen 10.0 geprueft — er laeuft gegen beide
+      aelteren Releases **ohne eine einzige Alias-Anpassung** durch:
+
+      | Release | Gruppen | Klassen | Synonyme | Merkmale | Werte | Klassenmerkmale |
+      |---|---|---|---|---|---|---|
+      | ETIM 8.0 (2020-11-09) | 168 | 5.415 | 30.604 | 15.748 | 14.796 | 68.258 |
+      | ETIM 9.0 (2022-12-05) | 167 | 5.554 | 33.684 | 16.728 | 15.656 | 73.085 |
+      | ETIM 10.0 (2024-12-05) | 159 | 5.640 | 37.058 | 17.377 | 16.163 | 76.625 |
+
+      Abweichungen gegenueber 10.0, alle unkritisch: 8.0/9.0 sind UTF-16LE **mit** BOM (10.0
+      ohne — `_decode` deckt beides ab); beide haben 8 statt 9 Dateien, es fehlt
+      `ETIMFEATUREGROUP.csv` (ohnehin ungenutzt); `ETIMFEATURE.csv` hat nur
+      `FEATUREID, FEATUREDESC` ohne `FEATUREGROUPID`.
+- [x] **Die Instabilitaet der Klassen-IDs ist jetzt gemessen, nicht behauptet** (8.0 -> 9.0):
+      53 Klassen entfallen, 192 kommen dazu, 5.362 bleiben. Davon:
+      **275 behalten ihre ID und aendern ihre Bezeichnung** (EC000024 "Installation box for
+      underfloor-installation" -> "Device installation insert for subfloor installation"),
+      und **1.274 von 5.362 (24 %) behalten ihre ID und aendern ihre Merkmalsliste**.
+      **Das ist die stille Luecke**, die der alte Guard nicht gesehen haette: bei gleicher
+      ID-Liste waere ein Cache mit veralteten Klassentexten unbemerkt durchgegangen. Behoben —
+      `_class_matrix` schreibt die Version in den `.npz` und prueft sie beim Laden; ein Cache
+      aus einer anderen Version wird verworfen und neu gerechnet, mit Hinweis im Terminal.
+- [x] **ZIPs werden beim Laden selbst entpackt** (21.9.2026). `load-model --etim 8.0` sucht in
+      `data/downloads/`, `data/etim/` und `data/` nach einem CSV-Release, dessen Dateiname die
+      Version nennt — genau so, wie die Dateien von etim-international.com heissen
+      (`ETIM-9.0-ALL-SECTORS-CSV-METRIC-EI-2022-12-05.zip`). Guideline- und IXF-Archive werden
+      am Namen ausgeschlossen, Unterordner im ZIP flachgezogen. Kein Entpacken von Hand mehr.
+- [ ] **Befund fuer den strawa-Test: die Zielklasse heisst in 8.0/9.0 anders.** EC004089 ist dort
+      **"Hydraulic control station"**, in 10.0 **"Hydronic control station"** — Synonyme und die
+      56 Merkmale sind in 8.0 und 9.0 identisch. "Hydraulic" liegt naeher an "hydraulisch" als
+      "Hydronic", das Retrieval fuer deutsche Hausbezeichnungen koennte gegen 8.0/9.0 also
+      **besser** treffen. Das ist eine Hypothese, keine Messung: beim ersten echten Lauf
+      denselben Katalog gegen alle drei Versionen laufen lassen und die Raenge vergleichen.
+      Nebenbei fuer den Merkmalsvergleich: von den 56 Merkmalen der Klasse sind **42 (75 %)
+      vom Typ L oder A**, also von Jev beantwortbar; die uebrigen 14 (Typ N/R) bleiben Gemini.
 - [x] **ETIM 8/9/10 waehlbar** (21.9.2026, Wunsch von David: aeltere Versionen zum Testen).
       Neu `etim/versions.py`: Normalisierung (`ETIM-8`/`8`/`8.0` -> `8.0`), Ablage unter
       `data/etim/<version>/`, **je Version eigene `etim-<v>.sqlite` und `class_emb-<v>.npz`**.
-      Der Grund fuer die strikte Trennung: Klassen-IDs sind zwischen ETIM-Versionen nicht
-      stabil — ein geteilter Embedding-Cache wuerde ohne jede Fehlermeldung falsche Klassen
-      liefern, dieselbe Fehlerklasse wie der Embedding-Bug vom 14.9.
+      **Praezisierung nach der Messung an echten Daten (siehe naechster Punkt):** die
+      urspruengliche Begruendung war zu pauschal. Der bestehende Guard in `_class_matrix`
+      vergleicht die Klassen-ID-Liste; zwischen 8.0 und 9.0 unterscheidet die sich (53 Klassen
+      weg, 192 neu), ein geteilter Cache haette also einen Neubau ausgeloest, keine falschen
+      Daten. Die echte stille Luecke ist eine andere und jetzt geschlossen (s. u.).
       Durchgesetzt an drei Stellen: `etim_version` an jedem Artikel in `classified.json` und
       `enriched.json`; `features.run` bricht ab, wenn die geladene Version nicht zur
       Klassenentscheidung passt; `export_bmecat` schreibt die Version des Jobs, nicht die

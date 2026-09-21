@@ -130,3 +130,95 @@ def test_export_uses_the_job_version_not_the_setting(tmp_path, monkeypatch):
     assert "ETIM-9.0" in root.findtext(f".//{{{NS}}}CATALOG_NAME")
     systems = {e.text for e in root.findall(f".//{{{NS}}}REFERENCE_FEATURE_SYSTEM_NAME")}
     assert systems == {"ETIM-9.0"}
+
+
+def test_embedding_cache_refuses_another_version(tmp_path, monkeypatch):
+    """Der gefaehrliche Fall: gleiche Klassen-IDs, anderer Klassentext.
+
+    Zwischen ETIM 8.0 und 9.0 behalten 275 Klassen ihre ID und aendern ihre
+    Bezeichnung. Ein Cache, der nur die ID-Liste prueft, waere dort unbemerkt
+    veraltet — die Version muss mitgeprueft werden.
+    """
+    import numpy as np
+
+    monkeypatch.setattr(config, "CACHE", tmp_path)
+    build_sqlite(FIX / "etim_mini", versions.db_path("9.0"), "9.0")
+    model9 = EtimModel(versions.db_path("9.0"), "9.0")
+
+    ids, emb = classify._class_matrix(model9)
+    assert emb.shape[0] == len(ids)
+
+    # Ein Cache mit denselben IDs, aber aus einer anderen Version, darf nicht gelten.
+    fremd = versions.emb_path("8.0")
+    np.savez(fremd, ids=np.array(ids), emb=emb, dry=np.array(True), version=np.array("9.0"))
+    build_sqlite(FIX / "etim_mini", versions.db_path("8.0"), "8.0")
+    model8 = EtimModel(versions.db_path("8.0"), "8.0")
+
+    gerechnet = []
+    monkeypatch.setattr(classify.llm, "embed",
+                        lambda texts: gerechnet.append(len(texts)) or emb)
+    classify._class_matrix(model8)
+    assert gerechnet, "Der fremde Cache wurde uebernommen statt neu zu rechnen"
+
+
+def test_embedding_cache_is_reused_within_a_version(tmp_path, monkeypatch):
+    """Richtige Version, gleiche Klassen: kein teurer Neubau."""
+    monkeypatch.setattr(config, "CACHE", tmp_path)
+    build_sqlite(FIX / "etim_mini", versions.db_path("9.0"), "9.0")
+    model = EtimModel(versions.db_path("9.0"), "9.0")
+    classify._class_matrix(model)
+
+    def boom(texts):
+        raise AssertionError("Es haette nichts neu gerechnet werden duerfen")
+
+    monkeypatch.setattr(classify.llm, "embed", boom)
+    ids, emb = classify._class_matrix(model)
+    assert emb.shape[0] == len(ids)
+
+
+def _release_zip(path: Path, *, extra_folder: str = "") -> Path:
+    """Ein ZIP bauen, das aussieht wie ein echtes CSV-Release."""
+    import zipfile
+
+    with zipfile.ZipFile(path, "w") as z:
+        for name in ("ETIMARTCLASS.csv", "ETIMARTGROUP.csv"):
+            z.writestr(f"{extra_folder}{name}", "ARTCLASSID;ARTCLASSDESC\nEC000001;Test\n")
+        z.writestr("liesmich.pdf", "kein CSV")
+    return path
+
+
+def test_archive_is_found_by_its_official_name(tmp_path, monkeypatch):
+    """Die ZIPs von etim-international.com heissen so — ohne Umbenennen finden."""
+    monkeypatch.setattr(config, "DATA", tmp_path)
+    (tmp_path / "downloads").mkdir()
+    assert versions.find_archive("9.0") is None
+
+    echt = _release_zip(tmp_path / "downloads" /
+                        "ETIM-9.0-ALL-SECTORS-CSV-METRIC-EI-2022-12-05.zip")
+    assert versions.find_archive("9.0") == echt
+    # Eine andere Version greift nicht danach.
+    assert versions.find_archive("8.0") is None
+
+    # Guideline- und IXF-Archive sind kein Datenrelease.
+    _release_zip(tmp_path / "downloads" / "ETIM-8.0-BMEcat-Guideline.zip")
+    assert versions.find_archive("8.0") is None
+
+
+def test_unpack_flattens_into_the_version_folder(tmp_path, monkeypatch):
+    """Manche Releases haben einen Unterordner — die CSVs muessen flach landen."""
+    monkeypatch.setattr(config, "DATA", tmp_path)
+    (tmp_path / "downloads").mkdir()
+    _release_zip(tmp_path / "downloads" / "ETIM-8.0-ALL-SECTORS-CSV-METRIC.zip",
+                 extra_folder="ETIM-8.0/")
+
+    ziel = versions.unpack("8.0")
+    assert ziel == tmp_path / "etim" / "8.0"
+    assert (ziel / "ETIMARTCLASS.csv").exists(), "CSV nicht flach entpackt"
+    assert not (ziel / "liesmich.pdf").exists(), "nur Datendateien entpacken"
+    assert versions.data_dir("8.0") == ziel
+
+
+def test_unpack_without_archive_says_what_to_do(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DATA", tmp_path)
+    with pytest.raises(SystemExit, match="downloads"):
+        versions.unpack("9.0")
