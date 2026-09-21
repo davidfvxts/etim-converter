@@ -130,3 +130,55 @@ def test_cancel_stops_between_articles(tmp_path):
             studio.cancel("läuft")
     finally:
         studio.RUNS.pop("läuft", None)
+
+
+def test_interrupted_run_with_variants(tmp_path, monkeypatch):
+    """Abbruch bei gruppierten Varianten: keine halbe Gruppe, keine Doppelfrage.
+
+    Seit der Variantengruppierung entscheidet ein Aufruf ueber mehrere Artikel.
+    Ein Abbruch darf weder eine Gruppe halb gefuellt zuruecklassen noch die schon
+    bezahlte Gruppe im zweiten Anlauf erneut fragen.
+    """
+    monkeypatch.setattr(config, "CACHE", tmp_path / "cache")
+    (tmp_path / "cache").mkdir()
+    build_sqlite(FIX / "etim_mini", versions.db_path("10.0"), "10.0")
+    model = EtimModel(versions.db_path("10.0"), "10.0")
+    out = tmp_path / "job"
+    out.mkdir()
+    (out / "products.json").write_text(json.dumps({"products": [
+        {"supplier_pid": "A-1", "name": "Rohrschelle 20-25 mit Pumpe X", "attributes": []},
+        {"supplier_pid": "A-2", "name": "Rohrschelle 20-25 mit Pumpe Y", "attributes": []},
+        {"supplier_pid": "A-3", "name": "Rohrschelle 20-25 mit Pumpe Z", "attributes": []},
+        {"supplier_pid": "B-1", "name": "Kugelhahn DN 20", "attributes": []},
+    ], "notes": ""}, ensure_ascii=False))
+
+    gefragt = []
+    echtes_decide = classify.decide
+
+    def zaehlend(model_, p, cands):
+        gefragt.append(p.name)
+        if len(gefragt) == 2:                      # nach der ersten Gruppe abbrechen
+            raise KeyboardInterrupt("Nutzer bricht ab")
+        return echtes_decide(model_, p, cands)
+
+    monkeypatch.setattr(checkpoint, "EVERY", 1)
+    monkeypatch.setattr(classify, "decide", zaehlend)
+    with pytest.raises(KeyboardInterrupt):
+        classify.run(out, model, classifier="gemini")
+
+    gesichert = json.loads(checkpoint.path(out, "classify").read_text())["done"]
+    assert set(gesichert) == {"A-1", "A-2", "A-3"}, "eine Gruppe wird ganz oder gar nicht gesichert"
+
+    def nur_zaehlend(model_, p, cands):
+        gefragt.append(p.name)
+        return echtes_decide(model_, p, cands)
+
+    monkeypatch.setattr(classify, "decide", nur_zaehlend)
+    gefragt.clear()
+    rows = classify.run(out, model, classifier="gemini")
+    assert gefragt == ["Kugelhahn DN 20"], "nur die offene Gruppe wird gefragt"
+    assert [r.product.supplier_pid for r in rows] == ["A-1", "A-2", "A-3", "B-1"]
+    varianten = [r for r in rows if r.product.supplier_pid.startswith("A-")]
+    assert len({v.decision.class_id for v in varianten}) == 1, "auch ueber den Abbruch hinweg eine Klasse"
+    assert [v.variant_of for v in varianten] == [None, "A-1", "A-1"]
+    assert not list(out.glob(".checkpoint.*"))

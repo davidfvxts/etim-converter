@@ -1,9 +1,8 @@
 """Was zwischen Klasse und Export schiefgehen kann: unerreichbare Wertelisten,
 erfundene Codes, falsche Einheiten. Jeder Fall einzeln, ohne echten API-Zugriff."""
 import json
-from pathlib import Path
 
-from etim import classify, features, llm
+from etim import features, llm
 from etim.schemas import ClassDecision, ClassCandidate, ClassifiedProduct, Product
 
 
@@ -150,3 +149,50 @@ def test_imperial_value_never_reaches_enriched(model):
     assert v.value is None and v.value_max is None, "unveraenderter Zollwert darf nicht bleiben"
     assert "imperiale Angabe" in (v.reason or "")
     assert v.confidence == 0.0
+
+
+def test_export_drops_unknown_codes(model, tmp_path):
+    """Letzte Instanz: was nach features noch angefasst wurde, wird vor dem XML geprueft.
+
+    Freigaben aus dem Pruef-Cockpit und Handkorrekturen gehen an classify und
+    features vorbei. Ein Code, den es in dieser ETIM-Version nicht gibt, darf
+    trotzdem nicht im Katalog des Herstellers landen.
+    """
+    from etim import export_bmecat
+    from etim.export_bmecat import NS
+    from lxml import etree
+
+    feats = model.features_for("EC000001")
+    echt = feats[0]
+    out = tmp_path / "exp"
+    out.mkdir()
+    (out / "enriched.json").write_text(json.dumps([
+        {   # gute Klasse, aber zwei vergiftete Merkmale
+            "product": {"supplier_pid": "G-1", "name": "Schelle", "attributes": []},
+            "class_id": "EC000001", "class_desc": "x", "class_confidence": 0.9,
+            "features": [
+                {"feature_id": echt.feature_id, "value": list(echt.values)[0][0] if echt.values else "1",
+                 "source": "Katalog", "confidence": 0.9},
+                {"feature_id": "EF999999", "value": "1", "source": "Katalog", "confidence": 0.9},
+                {"feature_id": echt.feature_id, "value": "EV999999", "source": "Katalog", "confidence": 0.9},
+            ],
+            "feature_meta": {echt.feature_id: {"type": echt.type, "unit_id": echt.unit_id},
+                             "EF999999": {"type": "N", "unit_id": ""}},
+            "coverage": 1.0, "etim_version": "10.0", "needs_review": False,
+        },
+        {   # Klasse gibt es gar nicht -> ganzer Artikel faellt weg
+            "product": {"supplier_pid": "G-2", "name": "Geist", "attributes": []},
+            "class_id": "EC999999", "class_desc": "x", "class_confidence": 0.9,
+            "features": [], "feature_meta": {}, "coverage": 1.0,
+            "etim_version": "10.0", "needs_review": False,
+        },
+    ], ensure_ascii=False))
+
+    xml = export_bmecat.run(out, "Muster GmbH", model=model)
+    roh = xml.read_text()
+    assert "EF999999" not in roh and "EV999999" not in roh and "EC999999" not in roh
+    pids = [p.findtext(f"{{{NS}}}SUPPLIER_PID")
+            for p in etree.parse(str(xml)).getroot().findall(f".//{{{NS}}}PRODUCT")]
+    assert pids == ["G-1"], "Artikel mit unbekannter Klasse gehoert nicht in den Katalog"
+    # der echte Wert ist geblieben — der Filter wirft nicht pauschal weg
+    assert echt.feature_id in roh

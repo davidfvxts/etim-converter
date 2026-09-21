@@ -12,6 +12,7 @@ from pathlib import Path
 from lxml import etree
 
 from . import versions
+from .model import EtimModel
 from .schemas import EnrichedProduct
 
 NS = "http://www.bmecat.org/bmecat/2005"
@@ -25,7 +26,58 @@ def _el(parent, tag, text=None, **attrs):
     return e
 
 
-def build(products: list[EnrichedProduct], supplier_name: str, catalog_id: str, supplier_gln: str | None = None, include_review: bool = False) -> etree._ElementTree:
+class _Known:
+    """Letzte Instanz vor dem Kundenkatalog: gibt es diesen Code ueberhaupt?
+
+    classify und features pruefen ihre eigenen Antworten bereits. Hierher kommt
+    aber auch, was danach noch angefasst wurde — Freigaben aus dem Pruef-Cockpit,
+    eine von Hand nachgebesserte enriched.json. Ein EC-, EF- oder EV-Code, den es
+    in der ETIM-Version des Jobs nicht gibt, darf den Hersteller nie erreichen:
+    er faellt hier raus und wird genannt, nicht stillschweigend mitgeschrieben.
+
+    Ohne geladenes Modell wird nicht geprueft (und das gesagt) — lieber ein
+    ungeprueftes Ergebnis als eines, das Pruefung nur vortaeuscht.
+    """
+
+    def __init__(self, model: EtimModel | None):
+        self.model = model
+        self._cache: dict[str, dict[str, set[str]]] = {}
+        self.dropped: list[str] = []
+
+    def _feats(self, class_id: str) -> dict[str, set[str]] | None:
+        if self.model is None:
+            return None
+        if class_id not in self._cache:
+            feats = self.model.features_for(class_id)
+            self._cache[class_id] = {f.feature_id: {c for c, _ in f.values} for f in feats}
+        return self._cache[class_id]
+
+    def _note(self, what: str) -> None:
+        if what not in self.dropped:
+            self.dropped.append(what)
+
+    def klasse(self, class_id: str) -> bool:
+        if self.model is None:
+            return True
+        if self.model.class_desc(class_id):
+            return True
+        self._note(f"Klasse {class_id}")
+        return False
+
+    def merkmal(self, class_id: str, feature_id: str, value: str, typ: str) -> bool:
+        feats = self._feats(class_id)
+        if feats is None:
+            return True
+        if feature_id not in feats:
+            self._note(f"Merkmal {feature_id} (nicht in {class_id})")
+            return False
+        if typ == "A" and feats[feature_id] and value not in feats[feature_id]:
+            self._note(f"Wert {value} (nicht in Werteliste von {feature_id})")
+            return False
+        return True
+
+
+def build(products: list[EnrichedProduct], supplier_name: str, catalog_id: str, supplier_gln: str | None = None, include_review: bool = False, model: EtimModel | None = None) -> etree._ElementTree:
     root = etree.Element(f"{{{NS}}}BMECAT", nsmap={None: NS, "xsi": XSI}, version="2005")
     root.set(f"{{{XSI}}}schemaLocation", f"{NS} bmecat_2005.xsd")
 
@@ -53,9 +105,10 @@ def build(products: list[EnrichedProduct], supplier_name: str, catalog_id: str, 
     _el(header, "SUPPLIER_IDREF", supplier_gln or supplier_name, type="gln" if supplier_gln else "supplier_specific")
 
     t = _el(root, "T_NEW_CATALOG")
+    known = _Known(model)
     n = 0
     for e in products:
-        if not e.class_id:
+        if not e.class_id or not known.klasse(e.class_id):
             continue
         if e.needs_review and not include_review:
             continue
@@ -78,6 +131,8 @@ def build(products: list[EnrichedProduct], supplier_name: str, catalog_id: str, 
             if fv.value is None:
                 continue
             meta = e.feature_meta.get(fv.feature_id, {})
+            if not known.merkmal(e.class_id, fv.feature_id, fv.value, meta.get("type", "")):
+                continue
             f = _el(pf, "FEATURE")
             _el(f, "FNAME", fv.feature_id)
             if meta.get("type") == "R":
@@ -105,12 +160,26 @@ def build(products: list[EnrichedProduct], supplier_name: str, catalog_id: str, 
         n += 1
     root.insert(0, etree.Comment(f" {n} Artikel, erzeugt von etim-pipeline; ETIM-Klassifikation (c) ETIM International, ODC-By 1.0 "))
     gen.text = f"etim-pipeline {datetime.now():%Y-%m-%d} ({n} Artikel)"
+    if known.dropped:
+        print(f"  export: {len(known.dropped)} unbekannte ETIM-Codes weggelassen: "
+              + ", ".join(known.dropped[:10]) + (" …" if len(known.dropped) > 10 else ""))
+    elif model is None:
+        print("  export: ohne geladenes ETIM-Modell — Codes nicht gegengeprueft")
     return etree.ElementTree(root)
 
 
-def run(out_dir: Path, supplier_name: str, supplier_gln: str | None = None, include_review: bool = False) -> Path:
+def run(out_dir: Path, supplier_name: str, supplier_gln: str | None = None, include_review: bool = False,
+        model: EtimModel | None = None) -> Path:
     items = [EnrichedProduct.model_validate(x) for x in json.loads((out_dir / "enriched.json").read_text())]
-    tree = build(items, supplier_name, catalog_id=out_dir.name, supplier_gln=supplier_gln, include_review=include_review)
+    if model is None:
+        # Gegen die Version des Jobs pruefen, nicht gegen die gerade eingestellte.
+        job_version = next((i.etim_version for i in items if i.etim_version), None)
+        try:
+            model = EtimModel(version=job_version)
+        except SystemExit:
+            model = None  # ohne geladenes Modell laeuft der Export weiter, aber ungeprueft
+    tree = build(items, supplier_name, catalog_id=out_dir.name, supplier_gln=supplier_gln,
+                 include_review=include_review, model=model)
     path = out_dir / "catalog.bmecat.xml"
     tree.write(str(path), xml_declaration=True, encoding="UTF-8", pretty_print=True)
     n = len(tree.getroot().findall(f".//{{{NS}}}PRODUCT"))
