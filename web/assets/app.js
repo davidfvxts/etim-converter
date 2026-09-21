@@ -855,7 +855,7 @@ function Topbar() {
     el('div', { class: 'topbar__actions' },
       state.demo ? Badge('Beispieldaten', 'accent') : null,
       state.jev ? Badge(state.jev.simulated ? 'Jev simuliert'
-                        : state.jev.ready ? 'Jev bereit' : 'Jev fehlt',
+                        : state.jev.ready ? 'Jev eingerichtet' : 'Jev fehlt',
                         state.jev.simulated ? 'warn' : state.jev.ready ? 'ok' : 'crit') : null,
       Button('', { variant: 'ghost', size: 'sm', iconName: dark ? 'sun' : 'moon',
         title: dark ? 'Helles Thema' : 'Dunkles Thema',

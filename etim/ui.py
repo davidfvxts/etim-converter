@@ -318,7 +318,11 @@ def run(target: Path, port: int = 8000, open_browser: bool = True) -> None:
         out_root.mkdir(parents=True, exist_ok=True)
 
     ok, reason = jev.configured()
-    print(f"Jev: {'bereit' if ok else 'nicht eingerichtet'} — {reason}")
+    # "eingerichtet", nicht "bereit": geprueft ist nur, dass die Zugangsdaten
+    # dastehen. Ob Jev antwortet, sagt erst ein echter Aufruf (make jev-check).
+    print(f"Jev: {'eingerichtet' if ok else 'nicht eingerichtet'} — {reason}")
+    if ok and not config.DRY_RUN:
+        print("     ob er auch antwortet, zeigt:  make jev-check")
 
     handler = type("JobHandler", (Handler,), {"out_root": out_root, "default_job": default_job})
     with ThreadingHTTPServer(("127.0.0.1", port), handler) as httpd:
