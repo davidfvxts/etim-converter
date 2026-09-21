@@ -11,6 +11,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="$ROOT/.env"
 WORKER_DIR="$ROOT/worker"
+# shellcheck source=lib_env.sh
+. "$ROOT/scripts/lib_env.sh"
 
 say()  { printf '\n\033[1m%s\033[0m\n' "$*"; }
 info() { printf '  %s\n' "$*"; }
@@ -72,29 +74,12 @@ info "Adresse: $URL"
 # --- .env schreiben ----------------------------------------------------------
 say "5/5  .env eintragen und pruefen"
 cd "$ROOT"
-[ -f "$ENV_FILE" ] || cp .env.example "$ENV_FILE"
+env_ensure
 cp "$ENV_FILE" "$ENV_FILE.bak"
 
-set_key() {  # set_key SCHLUESSEL WERT — ersetzt die Zeile oder haengt sie an
-  local key="$1" value="$2" tmp
-  tmp="$(mktemp)"
-  if grep -qE "^${key}=" "$ENV_FILE"; then
-    # Wert ueber die Umgebung uebergeben: nichts landet in der Prozessliste.
-    KEY="$key" VALUE="$value" awk '
-      BEGIN { k = ENVIRON["KEY"]; v = ENVIRON["VALUE"] }
-      $0 ~ "^" k "=" { print k "=" v; next } { print }
-    ' "$ENV_FILE" > "$tmp"
-  else
-    cat "$ENV_FILE" > "$tmp"
-    printf '%s=%s\n' "$key" "$value" >> "$tmp"
-  fi
-  mv "$tmp" "$ENV_FILE"
-  chmod 600 "$ENV_FILE"
-}
-
-set_key ETIM_JEV_TRANSPORT worker
-set_key ETIM_JEV_WORKER_URL "$URL/jev"
-set_key ETIM_JEV_WORKER_SECRET "$SECRET"
+env_set ETIM_JEV_TRANSPORT worker
+env_set ETIM_JEV_WORKER_URL "$URL/jev"
+env_set ETIM_JEV_WORKER_SECRET "$SECRET"
 info ".env aktualisiert (Sicherung: .env.bak)"
 
 CODE="$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $SECRET" "$URL/health" || echo 000)"

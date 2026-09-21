@@ -134,7 +134,19 @@ Wer Node.js und `wrangler` nicht einrichten will, spricht Workers AI direkt an �
 2. **Create a Workers AI API Token** → Token kopieren. (Ein selbst gebautes Token braucht
    die Berechtigungen `Workers AI – Read` **und** `Workers AI – Edit`.)
 3. Auf derselben Seite die **Account ID** kopieren.
-4. In die `.env`:
+4. Eintragen — geführt, ohne die Datei zu öffnen:
+
+```bash
+make env
+```
+
+Der Dialog fragt Gemini-Schlüssel, Cloudflare-Zugang und Klassifizierungsmodell ab. Eingaben mit
+Passwortcharakter werden **verdeckt** eingelesen, erscheinen also weder auf dem Bildschirm noch in
+der Shell-Historie; Enter behält den vorhandenen Wert. Angeführte Anführungszeichen und
+Leerzeichen aus dem Einfügen werden abgeschnitten, und eine vertauschte Account ID fällt sofort
+auf. Zum Schluss läuft automatisch die Probe. Die vorherige Fassung liegt als `.env.bak` daneben.
+
+Wer die Datei lieber selbst bearbeitet, trägt dasselbe von Hand ein:
 
 ```
 ETIM_JEV_TRANSPORT=cloudflare

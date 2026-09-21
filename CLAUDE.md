@@ -108,6 +108,7 @@ venv voraus (`source .venv/bin/activate`).
 
 ```
 make setup                      # venv + deps (einmalig)
+make env                        # Zugangsdaten gefuehrt eintragen (verdeckte Eingabe)
 make jev                        # Worker deployen, .env einrichten
 make jev-check                  # echter Mini-Aufruf: antwortet Jev?
 make load-model                 # ETIM-CSV -> SQLite + Embeddings
@@ -199,6 +200,18 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
       Fehlt das venv, sagt `make` das im Klartext statt mit einem Pfadfehler.
       In der README steht eine kleine Fehlertabelle fuer macOS (Xcode-Lizenz sperrt `git`
       und `make`, falscher Ordner, fehlendes `python`).
+- [x] **`make env`: Zugangsdaten gefuehrt eintragen** (21.9.2026). David hatte den
+      Cloudflare-Token und wollte ihn moeglichst einfach eintragen — ohne ihn in den Chat zu
+      schicken oder die `.env` von Hand zu oeffnen. Der Dialog fragt Gemini-Schluessel,
+      Jev-Weg (Cloudflare direkt oder Worker) und Klassifizierungsmodell ab. Secrets werden
+      mit `read -s` verdeckt eingelesen, Enter behaelt den alten Wert, Anzeige nur maskiert
+      (letzte vier Zeichen). Abgefangen: vertauschte Account ID/Token (32-Hex-Pruefung plus
+      Gleichheitstest), mitkopierte Anfuehrungszeichen und Leerzeichen, zu kurzer Token.
+      Am Ende laeuft `jev-check` von selbst.
+      Die `.env`-Helfer stehen jetzt in `scripts/lib_env.sh` und werden von beiden
+      Einrichtungsskripten benutzt — vorher hatte `setup_jev.sh` eine eigene Kopie.
+      Werte gehen ueber die Umgebung an `awk`, nie ueber die Kommandozeile (Prozessliste)
+      und nie durch `sed` (ein Token mit `&` oder `/` wuerde dort zerlegt).
 - [x] **Einrichtung auf einen Befehl eingedampft** (21.9.2026): `bash scripts/setup_jev.sh`
       macht Anmeldung, Secret, Deploy, `.env` und Funktionstest in einem Durchgang; wiederholbar,
       Secret wird nie ausgegeben, `.env.bak` als Sicherung. Dazu `python -m etim reference
