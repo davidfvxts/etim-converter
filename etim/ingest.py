@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 from pathlib import Path
 
 from pypdf import PdfReader, PdfWriter
@@ -68,6 +69,40 @@ def ingest_pdf(path: Path, pages: tuple[int, int] | None = None) -> tuple[list[P
     return dedupe(products), notes
 
 
+# Spaltenrollen fuer Excel/CSV. Reihenfolge = Vorrang. Frueher gewann die erste
+# Spalte, deren Name ein Stichwort *enthielt*: bei einer typischen Herstellerliste
+# (Artikelnummer, GTIN, Typbezeichnung, Kurzbeschreibung, Langbeschreibung) wurde so
+# der Typcode zur Bezeichnung, der Kurztext zur Beschreibung und der Langtext zu
+# einem Rohattribut. Die Rolle wird jetzt je Kopfzeile einmal nach Vorrang vergeben;
+# Typ-/Bestellcodes sind nie die Bezeichnung.
+_ROLE_PATTERNS = {
+    "pid": [r"^artikel-?nr\.?$", r"^artikelnummer$", r"^art\.?\s*-?nr\.?$", r"^artnr$", r"^sku$",
+            r"^supplier_pid$", r"^bestellnummer$", r"^material(nummer)?$", r"artikelnummer(?!n)", r"article\s*(no|number)"],
+    "gtin": [r"^gtin$", r"^ean$", r"gtin", r"\bean\b"],
+    "name": [r"^kurzbeschreibung$", r"^kurztext$", r"^artikelbezeichnung$", r"^produktname$", r"^bezeichnung$",
+             r"^description_short$", r"^short description$", r"^name$", r"^titel$",
+             r"kurzbeschreibung", r"kurztext", r"(?<!typ)bezeichnung", r"short", r"\bname\b"],
+    "desc": [r"^langbeschreibung$", r"^langtext$", r"^beschreibung$", r"^description_long$", r"^long description$",
+             r"^description$", r"langbeschreibung", r"langtext", r"long", r"(?<!kurz)beschreibung", r"description"],
+}
+_NEVER = {"name": [r"typ", r"type", r"code", r"hersteller", r"manufacturer"], "desc": [r"kurz", r"short"]}
+
+
+def map_columns(headers: list[str]) -> dict[str, str]:
+    """Kopfzeile -> {'pid','gtin','name','desc'}: Spaltenname. Jede Spalte hoechstens eine Rolle."""
+    taken: set[str] = set()
+    out: dict[str, str] = {}
+    for role in ("pid", "gtin", "name", "desc"):
+        for pat in _ROLE_PATTERNS[role]:
+            hit = next((h for h in headers if h not in taken and re.search(pat, h.strip().lower())
+                        and not any(re.search(n, h.lower()) for n in _NEVER.get(role, []))), None)
+            if hit:
+                out[role] = hit
+                taken.add(hit)
+                break
+    return out
+
+
 def ingest_table(path: Path) -> tuple[list[Product], list[str]]:
     """Excel/CSV: jede Zeile ein Artikel. Spalten heuristisch zuordnen, Rest wird Rohattribut."""
     rows: list[dict[str, str]] = []
@@ -87,19 +122,11 @@ def ingest_table(path: Path) -> tuple[list[Product], list[str]]:
 
         _, rows = read_csv(path)
 
-    def find(row, *keys):
-        for k in row:
-            kl = k.lower()
-            if any(x in kl for x in keys):
-                return k
-        return None
+    roles = map_columns(list(rows[0].keys()) if rows else [])
+    pid_col, name_col, desc_col, gtin_col = (roles.get(k) for k in ("pid", "name", "desc", "gtin"))
 
     products = []
     for i, r in enumerate(rows, start=2):
-        pid_col = find(r, "artikelnummer", "artikel-nr", "art.-nr", "artnr", "sku", "supplier_pid", "bestellnummer", "art. nr")
-        name_col = find(r, "bezeichnung", "name", "titel", "kurztext")
-        desc_col = find(r, "beschreibung", "langtext", "description")
-        gtin_col = find(r, "ean", "gtin")
         if not pid_col or not r.get(pid_col):
             continue
         used = {pid_col, name_col, desc_col, gtin_col}

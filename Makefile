@@ -1,4 +1,4 @@
-.PHONY: setup check env env-show test lint eval jev jev-check etim-folder versions load-model studio compare reference
+.PHONY: testset setup check env env-show test lint eval jev jev-check etim-folder versions load-model studio compare reference
 
 # Alles laeuft ueber das venv. Auf macOS gibt es kein "python", nur "python3" —
 # der direkte Pfad ins venv erspart sowohl das Aktivieren als auch den Unterschied.
@@ -66,3 +66,10 @@ compare: check              ## Gemini gegen Jev — make compare JOB=strawa [ETI
 
 reference: check            ## Geruest fuer reference.json — make reference JOB=strawa
 	$(PY) -m etim reference out/$(JOB)
+
+# Pipeline-Ergebnis gegen eine Loesungsdatei messen (Klasse + Merkmale).
+# make testset JOB=lts30 SOL=data/testsets/LTS_Testset_30_LOESUNG.xlsx
+SOL ?=
+testset: check
+	@test -n "$(SOL)" || { echo "  SOL=<Loesungsdatei.xlsx> angeben"; exit 1; }
+	$(PY) scripts/eval_testset.py out/$(JOB) $(SOL)

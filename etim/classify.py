@@ -177,7 +177,8 @@ def product_state(p: Product) -> dict:
         "description": p.description or None,
         "catalogue_attributes": {a.name: a.value for a in p.attributes[:24]} or None,
         "catalogue_line": (p.source_quote or None),
-        "language_note": "The article text is German; the class descriptions are English.",
+        "language_note": ("The article text is in the manufacturer's language (often German); "
+                          "the class descriptions are English."),
     }
 
 
@@ -244,6 +245,25 @@ def ask_jev(model: EtimModel, p: Product, cands: list[ClassCandidate]) -> ModelA
 
 
 
+def is_accessory_class(model: EtimModel, class_id: str | None) -> bool:
+    return bool(class_id) and bool(ACCESSORY_RE.match(model.class_desc(class_id) or ""))
+
+
+# Ab welcher Wahrscheinlichkeit die unabhaengige Zubehoerfrage als klare Aussage gilt.
+ACCESSORY_CONFLICT = 0.7
+
+
+def accessory_conflict(model: EtimModel, class_id: str | None, p_accessory: float | None) -> bool:
+    """Jev beantwortet die Zubehoerfrage unabhaengig von der Klassenwahl. Widersprechen
+    sich beide klar (Zubehoer-Artikel in Hauptproduktklasse oder umgekehrt), ist genau
+    der haeufigste ETIM-Fehler wahrscheinlich — das muss in die Pruefung, statt nur im
+    Begruendungstext zu stehen."""
+    if not class_id or p_accessory is None:
+        return False
+    acc_cls = is_accessory_class(model, class_id)
+    return (p_accessory >= ACCESSORY_CONFLICT and not acc_cls) or (p_accessory <= 1 - ACCESSORY_CONFLICT and acc_cls)
+
+
 def _review_flag(model: EtimModel, d: ClassDecision, cands: list[ClassCandidate]) -> bool:
     """Gemeinsame Review-Regel fuer beide Modelle."""
     in_cands = d.class_id in {x.class_id for x in cands}
@@ -273,6 +293,8 @@ def decide_jev(model: EtimModel, p: Product, cands: list[ClassCandidate]) -> tup
         why = f"Jev wählte {a.class_id} ({model.class_desc(a.class_id)}). Verteilung: {top}."
     if a.is_accessory is not None and a.is_accessory >= 0.5:
         why += f" Unabhängig gefragt: zu {a.is_accessory:.0%} Zubehör/Ersatzteil."
+    if accessory_conflict(model, a.class_id, a.is_accessory):
+        why += " WIDERSPRUCH Zubehör/Hauptprodukt — zur Prüfung."
     return ClassDecision(class_id=a.class_id, confidence=a.confidence,
                          reasoning=why, runner_up=a.runner_up), a
 
@@ -337,14 +359,16 @@ def run(out_dir: Path, model: EtimModel | None = None, *,
         cands = candidates_for(model, ids, emb, chunk, top_k)
         for p, c in zip(chunk, cands):
             tick(classifier, fertig, len(products), p.name[:60])
+            conflict = False
             if classifier == "jev":
                 d, a = decide_jev(model, p, c)
                 simulated = a.simulated
+                conflict = accessory_conflict(model, d.class_id, a.is_accessory)
             else:
                 d, simulated = decide(model, p, c), config.DRY_RUN
             cp.add(p.supplier_pid, ClassifiedProduct(
                 product=p, candidates=c[:5], decision=d,
-                needs_review=_review_flag(model, d, c),
+                needs_review=_review_flag(model, d, c) or conflict,
                 model=classifier, etim_version=model.version,
                 simulated=simulated).model_dump())
             fertig += 1
