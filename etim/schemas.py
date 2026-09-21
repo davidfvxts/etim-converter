@@ -47,6 +47,15 @@ class ClassifiedProduct(BaseModel):
     model: str = Field(default="gemini", description="Welches Modell die Klasse gewählt hat: 'gemini' oder 'jev'")
     etim_version: str = Field(default="", description="Gegen welche ETIM-Version klassifiziert wurde, z. B. '10.0'")
     simulated: bool = Field(default=False, description="Antwort aus dem Trockenlauf, nicht gemessen")
+    # Varianten-Gruppierung (classify.py): Artikel mit gleichem Basisnamen werden
+    # einmal klassifiziert, damit dasselbe Produkt nicht je nach verbauter
+    # Komponente in einer anderen ETIM-Klasse landet.
+    variant_group: Optional[str] = Field(
+        default=None, description="Normalisierter Basisname, wenn der Artikel zu einer Variantengruppe gehoert")
+    variant_of: Optional[str] = Field(
+        default=None, description="supplier_pid des stellvertretend klassifizierten Artikels; null beim Stellvertreter selbst")
+    invented_codes: list[str] = Field(
+        default_factory=list, description="EC-Codes aus der LLM-Antwort, die es in der ETIM-Klassentabelle nicht gibt")
 
 
 class FeatureValue(BaseModel):
@@ -73,6 +82,8 @@ class EnrichedProduct(BaseModel):
     model: str = Field(default="gemini", description="Modell der Klassenentscheidung")
     etim_version: str = Field(default="", description="ETIM-Version, aus der Merkmale und Wertelisten stammen")
     needs_review: bool = False
+    invented_codes: list[str] = Field(
+        default_factory=list, description="EF-Codes aus der LLM-Antwort, die es in dieser ETIM-Klasse nicht gibt")
 
 
 class Job(BaseModel):

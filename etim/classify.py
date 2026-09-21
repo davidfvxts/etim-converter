@@ -1,9 +1,11 @@
 """products.json -> classified.json
 
 1. Embeddings aller ETIM-Klassen (einmalig, Cache data/cache/class_emb.npz)
-2. je Artikel: Query-Embedding -> Top-K Kandidaten (Cosinus)
-3. LLM wählt aus Top-K die Klasse, gibt Konfidenz + Runner-up
-4. needs_review, wenn Konfidenz < Schwelle oder Klasse nicht in Kandidaten
+2. Varianten gruppieren: Artikel mit gleichem Basisnamen werden einmal klassifiziert
+3. je Gruppe: Query-Embedding -> Top-K Kandidaten (Cosinus)
+4. Modell wählt aus Top-K die Klasse, gibt Konfidenz + Runner-up
+5. EC-Codes in der Begründung gegen die Klassentabelle prüfen
+6. needs_review, wenn Konfidenz < Schwelle oder Klasse nicht in Kandidaten
 """
 from __future__ import annotations
 
@@ -71,6 +73,106 @@ def _class_matrix(model: EtimModel) -> tuple[list[str], np.ndarray]:
     np.savez(cache, ids=np.array(ids), emb=emb, dry=np.array(config.DRY_RUN),
              version=np.array(model.version))
     return ids, emb
+
+
+# --- Varianten -------------------------------------------------------------
+# Kataloge listen dasselbe Produkt mehrfach, nur mit anderem verbauten Bauteil:
+# "FBR-Regelgruppe 130/6 mit Grundfos UPM3 Auto 15-50 130" neben derselben Gruppe
+# mit Wilo-Pumpe. Das ist ein Produkttyp, also eine ETIM-Klasse. Der Trockenlauf
+# gegen strawa zeigte, dass das LLM je Variante anders entschied — fuer einen
+# Grosshaendler-Datencheck der auffaelligste Fehler. Statt das per Prompt zu bitten,
+# wird einmal je Gruppe klassifiziert und das Ergebnis kopiert: deterministisch,
+# und es spart die Aufrufe der uebrigen Varianten.
+#
+# Deutsch und englisch gleichermassen: Herstellerlisten kommen in beiden Sprachen,
+# und die Trennung darf nicht an der Katalogsprache haengen (CLAUDE.md, DE/EN).
+_VARIANT_SPLIT = re.compile(r"\s+(?:mit|with)\s+", re.IGNORECASE)
+
+
+def base_name(name: str) -> str:
+    """Der Produkttyp ohne die verbaute Komponente: alles vor dem ersten ' mit '/' with '."""
+    head = _VARIANT_SPLIT.split(name, maxsplit=1)[0]
+    head = head.strip(" ,;:-–—\t")
+    # Zu kurz heisst: das Trennwort stand am Anfang und trennt hier keine Variante ab.
+    return head if len(head) >= 3 else name.strip()
+
+
+def variant_key(p: Product) -> str:
+    return re.sub(r"\s+", " ", base_name(p.name)).strip().lower()
+
+
+def group_variants(products: list[Product]) -> list[tuple[str, list[int]]]:
+    """[(Gruppenschluessel, [Index in products])], in Reihenfolge des ersten Auftretens."""
+    groups: dict[str, list[int]] = {}
+    for i, p in enumerate(products):
+        groups.setdefault(variant_key(p), []).append(i)
+    return list(groups.items())
+
+
+def representative(p: Product) -> Product:
+    """Der Artikel, wie er stellvertretend fuer die Gruppe gefragt wird.
+
+    Der Basisname ersetzt den Katalognamen — sowohl im Query-Embedding als auch
+    im Prompt. Das Komponentenrauschen ("mit Grundfos UPM3 Auto 15-50 130") zieht
+    das Retrieval sonst zur Pumpenklasse statt zur Baugruppe.
+    """
+    b = base_name(p.name)
+    return p if b == p.name else p.model_copy(update={"name": b})
+
+
+# --- EC-Codes in der Begruendung -------------------------------------------
+_EC_CODE = re.compile(r"\bEC\d{6}\b")
+
+
+def check_reasoning_codes(model: EtimModel, d: ClassDecision, cands: list[ClassCandidate]) -> list[str]:
+    """EC-Codes aus der LLM-Antwort gegen die Klassentabelle pruefen.
+
+    Beobachtet im strawa-Trockenlauf: zur Rechtfertigung von class_id = null nannte
+    das Modell sechs Klassen als "die eigentlich passende". Eine davon (EC010091)
+    existiert nicht, die uebrigen bezeichnen etwas voellig anderes (EC011609 = "Bath").
+    Beides liest sich im Pruef-Cockpit wie ein ETIM-Befund. Also:
+      - erfundener Code -> als nicht existent markiert (und als class_id verworfen),
+      - echter Code ausserhalb der Kandidatenliste -> bekommt seine wirkliche
+        Beschreibung angehaengt, damit die Fehlbehauptung neben der Wahrheit steht.
+    Rueckgabe: die erfundenen Codes, fuer classified.json und die Konsolenmeldung.
+    """
+    invented: list[str] = []
+
+    def note(code: str) -> None:
+        if code not in invented:
+            invented.append(code)
+
+    dropped = None
+    if d.class_id and not model.class_desc(d.class_id):
+        dropped = d.class_id
+        note(dropped)
+        d.class_id = None
+        d.confidence = min(d.confidence, 0.5)
+
+    if d.runner_up and not model.class_desc(d.runner_up):
+        note(d.runner_up)
+        d.runner_up = None
+
+    # Die Kandidatenliste und die gewaehlte Klasse hat das Modell im Klartext gesehen;
+    # nur alles Uebrige ist eine Behauptung, die einen Gegenbeleg braucht.
+    known = {c.class_id for c in cands} | {d.class_id}
+
+    def annotate(m: re.Match) -> str:
+        code = m.group(0)
+        desc = model.class_desc(code)
+        if not desc:
+            note(code)
+            return f"{code} [existiert nicht in {versions.label(model.version)}]"
+        return code if code in known else f'{code} ("{desc}")'
+
+    if d.reasoning:
+        d.reasoning = _EC_CODE.sub(annotate, d.reasoning)
+    # Erst nach der Ersetzung anhaengen, sonst annotiert die Regex die eigene Notiz mit.
+    if dropped:
+        d.reasoning = (d.reasoning or "").rstrip() + (
+            f" [gewaehlter Code {dropped} existiert nicht in {versions.label(model.version)} — verworfen]"
+        )
+    return invented
 
 
 def query_text(p: Product) -> str:
@@ -326,21 +428,34 @@ def run(out_dir: Path, model: EtimModel | None = None, *,
             d = ClassDecision(class_id=a.class_id, confidence=a.confidence,
                               reasoning=a.reasoning, runner_up=a.runner_up)
             cands = it.retrieval[: config.TOP_K_CLASSES]
+            # Auch auf diesem Weg darf kein erfundener EC-Code in classified.json.
+            invented = check_reasoning_codes(model, d, cands)
             result.append(ClassifiedProduct(
                 product=it.product, candidates=cands[:5], decision=d,
                 needs_review=_review_flag(model, d, cands),
-                model="gemini", etim_version=model.version, simulated=a.simulated))
+                model="gemini", etim_version=model.version, simulated=a.simulated,
+                invented_codes=invented))
         return _write(out_dir, result, "gemini (Vergleich in compare.json)")
 
     tick = progress or (lambda *_: None)
     data = json.loads((out_dir / "products.json").read_text())
     products = [Product.model_validate(p) for p in data["products"]]
 
+    # Varianten zusammenfassen, bevor irgendetwas bezahlt wird: eine Gruppe ist
+    # ein Produkttyp und bekommt genau eine Klasse.
+    groups = group_variants(products)
+    n_multi = sum(1 for _, idx in groups if len(idx) > 1)
+    if n_multi:
+        print(f"  {len(products)} Artikel → {len(groups)} Gruppen ({n_multi} mit Varianten), "
+              f"{len(products) - len(groups)} LLM-Aufrufe gespart")
+
     # Zwischenstand: ein abgebrochener Lauf soll die bezahlten Antworten behalten.
+    # Die Gruppenzahl gehoert zu den Bedingungen — aendert sich die Gruppierung,
+    # passen die alten Antworten nicht mehr zu den neuen Stellvertretern.
     cp = checkpoint.Checkpoint(out_dir, "classify", {
         "classifier": classifier, "etim_version": model.version,
         "top_k": config.JEV_TOP_K if classifier == "jev" else config.TOP_K_CLASSES,
-        "dry_run": config.DRY_RUN, "n": len(products)})
+        "dry_run": config.DRY_RUN, "n": len(products), "gruppen": len(groups)})
     if fresh:
         cp.clear()
     elif (wieder := cp.load()):
@@ -350,28 +465,42 @@ def run(out_dir: Path, model: EtimModel | None = None, *,
     tick("retrieval", 0, len(products), "Kandidaten suchen")
     ids, emb = _class_matrix(model)
     top_k = config.JEV_TOP_K if classifier == "jev" else config.TOP_K_CLASSES
-    offen = [p for p in products if p.supplier_pid not in cp.done]
+    # Offen ist eine Gruppe, solange nicht jedes ihrer Mitglieder im Zwischenstand steht.
+    offen = [(key, idxs) for key, idxs in groups
+             if any(products[i].supplier_pid not in cp.done for i in idxs)]
     fertig = len(cp.done)
+    invented_total: list[str] = []
 
     batch = 50
     for i in range(0, len(offen), batch):
         chunk = offen[i : i + batch]
-        cands = candidates_for(model, ids, emb, chunk, top_k)
-        for p, c in zip(chunk, cands):
-            tick(classifier, fertig, len(products), p.name[:60])
+        reps = [representative(products[idxs[0]]) for _, idxs in chunk]
+        cands = candidates_for(model, ids, emb, reps, top_k)
+        for (key, idxs), rep, c in zip(chunk, reps, cands):
+            tick(classifier, fertig, len(products), rep.name[:60])
             conflict = False
             if classifier == "jev":
-                d, a = decide_jev(model, p, c)
+                d, a = decide_jev(model, rep, c)
                 simulated = a.simulated
                 conflict = accessory_conflict(model, d.class_id, a.is_accessory)
             else:
-                d, simulated = decide(model, p, c), config.DRY_RUN
-            cp.add(p.supplier_pid, ClassifiedProduct(
-                product=p, candidates=c[:5], decision=d,
-                needs_review=_review_flag(model, d, c) or conflict,
-                model=classifier, etim_version=model.version,
-                simulated=simulated).model_dump())
-            fertig += 1
+                d, simulated = decide(model, rep, c), config.DRY_RUN
+            # Vor dem Review-Flag: ein erfundener Code wird hier zu None und muss
+            # danach als "keine Klasse" in die Pruefung laufen.
+            invented = check_reasoning_codes(model, d, c)
+            invented_total += [x for x in invented if x not in invented_total]
+            review = _review_flag(model, d, c) or conflict
+            for j, pi in enumerate(idxs):
+                cp.add(products[pi].supplier_pid, ClassifiedProduct(
+                    product=products[pi], candidates=c[:5],
+                    decision=d.model_copy(deep=True),
+                    needs_review=review,
+                    model=classifier, etim_version=model.version,
+                    simulated=simulated,
+                    variant_group=key if len(idxs) > 1 else None,
+                    variant_of=None if j == 0 else products[idxs[0]].supplier_pid,
+                    invented_codes=list(invented)).model_dump())
+                fertig += 1
         print(f"  klassifiziert {fertig}/{len(products)}")
     cp.save()
     tick(classifier, len(products), len(products), "fertig")
@@ -379,6 +508,21 @@ def run(out_dir: Path, model: EtimModel | None = None, *,
     # In der Reihenfolge des Katalogs ausgeben, nicht in der des Zwischenstands.
     result = [ClassifiedProduct.model_validate(cp.done[p.supplier_pid])
               for p in products if p.supplier_pid in cp.done]
+
+    # Die Variantengruppen einzeln nennen: das ist die Zeile, an der man ohne
+    # Diff sieht, ob baugleiche Artikel dieselbe Klasse tragen.
+    by_pid = {r.product.supplier_pid: r for r in result}
+    multi = [(key, idxs) for key, idxs in groups if len(idxs) > 1]
+    for key, idxs in multi[:15]:
+        r = by_pid.get(products[idxs[0]].supplier_pid)
+        cid = r.decision.class_id if r else None
+        print(f'  Gruppe "{key[:60]}" ({len(idxs)} Artikel) → {cid or "keine Klasse"}')
+    if len(multi) > 15:
+        print(f"  … und {len(multi) - 15} weitere Gruppen")
+    if invented_total:
+        print(f"  Achtung: {len(invented_total)} erfundene EC-Codes in Begründungen markiert: "
+              + ", ".join(invented_total[:10]))
+
     out = _write(out_dir, result, classifier)
     cp.clear()
     return out
