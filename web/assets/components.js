@@ -35,6 +35,10 @@ const PATHS = {
   arrow:   '<path d="M5 12h14M13 6l6 6-6 6"/>',
   sun:     '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   moon:    '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>',
+  upload:  '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 9l5-5 5 5M12 4v12"/>',
+  scale:   '<path d="M12 3v18M7 7h10"/><path d="M4 12 7 7l3 5a3 3 0 0 1-6 0ZM14 12l3-5 3 5a3 3 0 0 1-6 0Z"/>',
+  spark:   '<path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/>',
+  ban:     '<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>',
 };
 
 export function icon(name, cls = '') {
@@ -170,4 +174,92 @@ export function toast(message) {
   node.classList.add('is-open');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => node.classList.remove('is-open'), 2400);
+}
+
+
+/* --------------------------------------------------------- Vergleich & Lauf */
+
+/** Ablagefeld fuer Kataloge. Klick und Drag & Drop fuehren zum selben Ergebnis. */
+export function DropZone({ hint, accept, onFile, disabled }) {
+  const input = el('input', {
+    type: 'file', class: 'drop__input', accept,
+    onChange: e => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ''; },
+  });
+  const zone = el('label', { class: `drop${disabled ? ' drop--off' : ''}` },
+    input,
+    icon('upload', 'drop__icon'),
+    el('div', { class: 'drop__title' }, 'Katalog hierher ziehen oder klicken'),
+    el('p', { class: 'drop__hint' }, hint),
+  );
+  if (disabled) return zone;
+  const stop = e => { e.preventDefault(); e.stopPropagation(); };
+  zone.addEventListener('dragover', e => { stop(e); zone.classList.add('is-over'); });
+  zone.addEventListener('dragleave', e => { stop(e); zone.classList.remove('is-over'); });
+  zone.addEventListener('drop', e => {
+    stop(e); zone.classList.remove('is-over');
+    const f = e.dataTransfer?.files?.[0];
+    if (f) onFile(f);
+  });
+  return zone;
+}
+
+/** Fortschritt eines Laufs: welche Stufe laeuft, wie weit, und was zuletzt geschah. */
+export function RunProgress(run) {
+  if (!run || run.state === 'idle') return null;
+  const pct = run.total ? Math.min(1, run.done / run.total) : null;
+  const tone = run.state === 'error' ? 'crit' : run.state === 'done' ? 'ok' : 'accent';
+  return el('div', { class: `run run--${tone}` },
+    el('div', { class: 'run__head' },
+      Badge(run.state === 'error' ? 'Fehler' : run.state === 'done' ? 'Fertig' : 'Läuft',
+            tone === 'accent' ? 'accent' : tone, { dot: run.state === 'running' }),
+      el('div', { class: 'run__msg' }, run.message || run.stage_label || ''),
+      pct === null ? null : el('span', { class: 'run__count num' }, `${run.done}/${run.total}`),
+    ),
+    el('div', { class: 'run__stages' }, (run.stages || []).map(s =>
+      el('span', {
+        class: `run__stage${s.key === run.stage ? ' is-now' : ''}${s.active ? '' : ' is-off'}`,
+      }, s.label))),
+    pct === null ? null : el('div', { class: 'run__track' },
+      el('div', { class: 'run__fill', style: `width:${pct * 100}%` })),
+    run.error ? el('pre', { class: 'run__error' }, run.error) : null,
+    run.log?.length ? el('details', { class: 'run__log' },
+      el('summary', {}, 'Verlauf'),
+      el('pre', {}, run.log.join('\n'))) : null,
+  );
+}
+
+/** Eine Kennzahl im Modellvergleich: links Gemini, rechts Jev. */
+export function MetricRow({ label, hint, a, b, best }) {
+  const cell = (v, side) => el('div', {
+    class: `cmp__cell${best === side ? ' cmp__cell--best' : ''}`,
+  }, v === null || v === undefined || v === '' ? el('span', { class: 'faint' }, '—') : v);
+  return el('div', { class: 'cmp__row' },
+    el('div', { class: 'cmp__label' },
+      el('div', {}, label),
+      hint ? el('div', { class: 'cmp__hint' }, hint) : null),
+    cell(a, 'a'), cell(b, 'b'),
+  );
+}
+
+/** Wahrscheinlichkeitsverteilung einer Jev-Antwort. */
+export function ProbBar(probabilities, { labels = {}, chosen } = {}) {
+  const rows = Object.entries(probabilities || {}).sort((x, y) => y[1] - x[1]).slice(0, 5);
+  if (!rows.length) return null;
+  return el('div', { class: 'probs' }, rows.map(([code, p]) =>
+    el('div', { class: `probs__row${code === chosen ? ' is-chosen' : ''}` },
+      el('span', { class: 'probs__code code' }, code),
+      el('span', { class: 'probs__name' }, labels[code] || ''),
+      el('span', { class: 'probs__track' }, el('span', { class: 'probs__fill', style: `width:${p * 100}%` })),
+      el('span', { class: 'probs__pct num' }, `${(p * 100).toFixed(p >= 0.1 ? 0 : 1)} %`),
+    )));
+}
+
+/** Ein EC-Code aus einer Begruendung, gegen die Klassentabelle geprueft. */
+export function CodeChip(c) {
+  return el('span', {
+    class: `chip chip--${c.known ? 'ok' : 'crit'}`,
+    title: c.known ? c.desc : 'Dieser Code steht nicht in der ETIM-Klassentabelle.',
+  }, icon(c.known ? 'check' : 'ban', 'chip__icon'),
+     el('span', { class: 'code' }, c.code),
+     el('span', { class: 'chip__desc' }, c.known ? c.desc : 'unbelegt'));
 }

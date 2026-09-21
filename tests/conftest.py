@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import shutil
@@ -7,7 +8,7 @@ import pytest
 
 os.environ["ETIM_DRY_RUN"] = "1"
 
-from etim import config, llm  # noqa: E402
+from etim import config, jev, llm  # noqa: E402
 
 FIX = Path(__file__).parent / "fixtures"
 
@@ -54,10 +55,63 @@ def fake_fill(prompt: str):
     return {"features": out}
 
 
+def _words(x) -> set[str]:
+    return set(re.findall(r"\w+", json.dumps(x, ensure_ascii=False).lower()))
+
+
+def fake_jev(state, questions):
+    """Deterministischer Jev-Ersatz: Wortueberlappung statt Modell.
+
+    Bildet die Antwortform exakt nach (choice/probabilities/confidence bzw. noul),
+    damit der Auswertungspfad getestet wird — nicht die Modellqualitaet.
+    """
+    # Der Sprachhinweis steht in jedem Zustand und wuerde jede Wortzaehlung verwaessern.
+    if isinstance(state, dict):
+        state = {k: v for k, v in state.items() if k != "language_note"}
+    sw = _words(state)
+    flat = " ".join(sw)
+    # Fixture-Brücken Deutsch -> Englisch, wie sie fake_fill fuer Gemini benutzt.
+    BRIDGE = [("stahl", "steel"), ("epdm", "plastic"), ("gummieinlage", "rubber"),
+              ("kugelhahn", "ball valve"), ("rohrschelle", "pipe clamp")]
+    answers = {}
+    for key, q in questions.items():
+        if q["type"] == "noul":
+            crit = (q.get("criteria") or {}).get("true") or q["instructions"]
+            hits = len(sw & _words(crit))
+            for de, en in BRIDGE:
+                if de in flat and en in json.dumps(crit, ensure_ascii=False).lower():
+                    hits += 3
+            answers[key] = {"type": "noul", "noul": round(min(0.95, 0.05 + 0.12 * hits), 2)}
+            continue
+        scores = {}
+        for opt, desc in q["criteria"].items():
+            score = len(sw & _words(desc)) if desc is not None else 0
+            text = json.dumps(desc, ensure_ascii=False).lower()
+            for de, en in BRIDGE:
+                if de in flat and en in text:
+                    score += 3
+            # Dieselben Fixture-Heuristiken wie fake_decide, damit beide Modelle
+            # im Test auf derselben Grundlage entscheiden.
+            if "gummieinlage" in flat and "accessories" in text:
+                score += 5
+            scores[opt] = score
+        # "keine passt" gewinnt nur, wenn wirklich nichts anderes punktet.
+        if scores.get("none", 0) and max((v for k, v in scores.items() if k != "none"), default=0):
+            scores["none"] = 0
+        total = sum(scores.values()) or 1
+        probs = {k: round(v / total, 4) for k, v in scores.items()}
+        best = max(scores, key=lambda k: scores[k])
+        answers[key] = {"type": "choice", "choice": best,
+                        "confidence": round(probs[best], 4), "probabilities": probs}
+    return answers
+
+
 @pytest.fixture(scope="session", autouse=True)
 def fakes(tmp_path_factory):
     llm.register_fake("decide", fake_decide)
     llm.register_fake("fill", fake_fill)
+    jev.register_fake("classify", fake_jev)
+    jev.register_fake("features", fake_jev)
     cache = tmp_path_factory.mktemp("cache")
     config.CACHE = cache
     config.OUT = tmp_path_factory.mktemp("out")

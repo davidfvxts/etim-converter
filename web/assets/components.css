@@ -289,3 +289,121 @@
   z-index: 40;
 }
 .toast.is-open { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* === Ablagefeld: Katalog einspielen ===================================== */
+.drop {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--s-3);
+  padding: var(--s-9) var(--s-6);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-lg);
+  background: var(--surface-sunken);
+  text-align: center; cursor: pointer;
+  transition: border-color var(--motion-fast), background var(--motion-fast);
+}
+.drop:hover, .drop:focus-within { border-color: var(--accent); background: var(--accent-soft); }
+.drop.is-over { border-color: var(--accent); background: var(--accent-soft); border-style: solid; }
+.drop--off { opacity: .55; cursor: not-allowed; }
+.drop--off:hover { border-color: var(--line-strong); background: var(--surface-sunken); }
+.drop__input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.drop__icon { width: 22px; height: 22px; color: var(--ink-faint); }
+.drop__title { font-size: var(--fs-md); font-weight: var(--fw-medium); color: var(--ink); }
+.drop__hint {
+  max-width: 46ch; margin: 0;
+  font-size: var(--fs-xs); line-height: var(--lh-body); color: var(--ink-muted);
+}
+
+/* === Lauf: Fortschritt und Verlauf ====================================== */
+.run {
+  margin-top: var(--s-6); padding: var(--s-5);
+  border: 1px solid var(--idle-line); border-radius: var(--r-md);
+  background: var(--surface-sunken);
+}
+.run--accent { border-color: var(--accent-line); background: var(--accent-soft); }
+.run--ok     { border-color: var(--ok-line);     background: var(--ok-soft); }
+.run--crit   { border-color: var(--crit-line);   background: var(--crit-soft); }
+.run__head { display: flex; align-items: center; gap: var(--s-4); }
+.run__msg { flex: 1; min-width: 0; font-size: var(--fs-sm); color: var(--ink); }
+.run__count { font-size: var(--fs-xs); color: var(--ink-muted); flex: none; }
+.run__stages { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-4); }
+.run__stage {
+  padding: 1px var(--s-3); border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  font-size: var(--fs-2xs); color: var(--ink-muted); background: var(--surface);
+}
+.run__stage.is-now { border-color: var(--accent); color: var(--accent); font-weight: var(--fw-medium); }
+.run__stage.is-off { opacity: .4; }
+.run__track {
+  margin-top: var(--s-4); height: 4px; border-radius: var(--r-pill);
+  background: var(--idle-soft); overflow: hidden;
+}
+.run__fill { height: 100%; background: var(--accent); transition: width var(--motion-med); }
+.run__error, .run__log pre {
+  margin: var(--s-4) 0 0; padding: var(--s-4);
+  border-radius: var(--r-sm); background: var(--surface);
+  font-family: var(--font-mono); font-size: var(--fs-2xs);
+  color: var(--ink-muted); white-space: pre-wrap; word-break: break-word;
+}
+.run__error { color: var(--crit); }
+.run__log { margin-top: var(--s-4); }
+.run__log summary {
+  cursor: pointer; font-size: var(--fs-xs); color: var(--ink-muted);
+}
+
+/* === Modellvergleich ==================================================== */
+.cmp { display: flex; flex-direction: column; }
+.cmp__row {
+  display: grid; grid-template-columns: minmax(200px, 1.4fr) 1fr 1fr;
+  gap: var(--s-5); align-items: start;
+  padding: var(--s-5) var(--s-6);
+  border-top: 1px solid var(--line);
+}
+.cmp__row:first-child { border-top: 0; }
+.cmp__row--head { background: var(--surface-sunken); align-items: end; }
+.cmp__label { font-size: var(--fs-sm); color: var(--ink); }
+.cmp__hint {
+  margin-top: 2px; font-size: var(--fs-2xs); line-height: var(--lh-body); color: var(--ink-faint);
+}
+.cmp__cell { font-size: var(--fs-md); color: var(--ink); font-variant-numeric: tabular-nums; }
+.cmp__cell--best { color: var(--ok); font-weight: var(--fw-semi); }
+.cmp__head { display: flex; flex-direction: column; gap: var(--s-3); }
+.cmp__model { font-size: var(--fs-lg); font-weight: var(--fw-semi); color: var(--ink); }
+.cmp__tags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); }
+.cmp__k { font-size: var(--fs-2xs); color: var(--ink-faint); }
+
+/* === Wahrscheinlichkeiten einer Jev-Antwort ============================= */
+.probs { display: flex; flex-direction: column; gap: var(--s-3); margin-top: var(--s-5); }
+.probs__row {
+  display: grid; grid-template-columns: 76px minmax(0, 1fr) 72px 48px;
+  gap: var(--s-4); align-items: center;
+  font-size: var(--fs-2xs); color: var(--ink-muted);
+}
+.probs__row.is-chosen { color: var(--ink); font-weight: var(--fw-medium); }
+.probs__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.probs__track {
+  height: 4px; border-radius: var(--r-pill); background: var(--idle-soft); overflow: hidden;
+}
+.probs__fill { display: block; height: 100%; background: var(--idle); }
+.probs__row.is-chosen .probs__fill { background: var(--accent); }
+.probs__pct { text-align: right; }
+
+/* === Geprüfter EC-Code aus einer Begründung ============================= */
+.chips { display: flex; flex-wrap: wrap; gap: var(--s-3); margin-top: var(--s-4); }
+.chip {
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  max-width: 100%; padding: 2px var(--s-3);
+  border: 1px solid var(--ok-line); border-radius: var(--r-pill);
+  background: var(--ok-soft); color: var(--ok);
+  font-size: var(--fs-2xs);
+}
+.chip--crit { border-color: var(--crit-line); background: var(--crit-soft); color: var(--crit); }
+.chip__icon { width: 11px; height: 11px; flex: none; }
+.chip__desc {
+  max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ink-muted);
+}
+.chip--crit .chip__desc { color: var(--crit); }
+.cmp__model .cmp__id {
+  display: block; margin-top: 2px;
+  font-size: var(--fs-2xs); font-weight: var(--fw-normal); color: var(--ink-faint);
+}

@@ -10,5 +10,13 @@ out/
 web/preview.html
 web/preview.body.html
 
-# Test- und Kundenkataloge: gehoeren nie ins Repo (Kundendaten, Binaergroesse)
+# Test- und Kundenkataloge: gehoeren nie ins Repo (Kundendaten, Binaergroesse).
+# Hochgeladene Kataloge liegen unter out/<job>/source/ und sind darueber schon
+# ausgeschlossen; die Endungen hier fangen versehentliche Ablagen woanders ab.
 *.pdf
+*.xlsx
+
+# Cloudflare-Worker
+worker/node_modules/
+worker/.wrangler/
+worker/package-lock.json

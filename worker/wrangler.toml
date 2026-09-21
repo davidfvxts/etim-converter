@@ -1,0 +1,17 @@
+# Jev-Vorschaltung fuer die ETIM-Pipeline.
+#
+# Bewusst ein eigener Worker und nicht der bestehende "etim-converter":
+# dessen Quelltext war aus dieser Sitzung nicht lesbar, und ein Deployment
+# haette ihn ueberschrieben. Wenn er ohnehin nur Jev vorschalten soll, kann
+# der Name hier angepasst werden.
+name = "etim-jev-proxy"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+# Workers AI. Das Modell steht fest im Quelltext (typesafe/jev).
+[ai]
+binding = "AI"
+
+# ETIM_PROXY_SECRET wird NICHT hier eingetragen, sondern als Secret gesetzt:
+#   npx wrangler secret put ETIM_PROXY_SECRET
+# Dasselbe Secret gehoert in die .env der App als ETIM_JEV_WORKER_SECRET.

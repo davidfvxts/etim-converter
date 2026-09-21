@@ -105,12 +105,22 @@ def generate_json(
     files: Sequence[tuple[bytes, str]] = (),
     temperature: float = 0.1,
     retries: int = 6,
+    stats: dict | None = None,
 ) -> T:
-    """Strukturierte Antwort. `files` = [(bytes, mime_type)], z. B. PDF-Ausschnitte."""
+    """Strukturierte Antwort. `files` = [(bytes, mime_type)], z. B. PDF-Ausschnitte.
+
+    `stats` wird, wenn uebergeben, mit input_tokens/output_tokens/latency_ms
+    gefuellt — der Modellvergleich braucht Laufzeit und Kosten je Aufruf.
+    """
+    t_start = time.monotonic()
     if config.DRY_RUN:
         if name not in _fake_handlers:
             raise RuntimeError(f"DRY_RUN: kein Fake für '{name}' registriert")
-        return schema.model_validate(_fake_handlers[name](prompt))
+        result = schema.model_validate(_fake_handlers[name](prompt))
+        if stats is not None:
+            stats.update(input_tokens=len(prompt) // 4, output_tokens=0,
+                         latency_ms=int((time.monotonic() - t_start) * 1000), simulated=True)
+        return result
 
     from google.genai import types
 
@@ -129,6 +139,14 @@ def generate_json(
                     temperature=temperature,
                 ),
             )
+            if stats is not None:
+                um = getattr(resp, "usage_metadata", None)
+                stats.update(
+                    input_tokens=getattr(um, "prompt_token_count", 0) or 0,
+                    output_tokens=getattr(um, "candidates_token_count", 0) or 0,
+                    latency_ms=int((time.monotonic() - t_start) * 1000),
+                    simulated=False,
+                )
             if resp.parsed is not None:
                 return resp.parsed  # type: ignore[return-value]
             return schema.model_validate(json.loads(resp.text))

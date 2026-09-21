@@ -26,6 +26,7 @@ def main(argv=None):
         ("export", "enriched.json -> catalog.bmecat.xml"),
         ("validate", "BMEcat prüfen"),
         ("report", "report.md + review.csv"),
+        ("compare", "Gemini gegen Jev auf denselben Artikeln"),
         ("run", "alles"),
     ]:
         s = sub.add_parser(name, help=help_)
@@ -36,12 +37,22 @@ def main(argv=None):
         s.add_argument("--supplier", default="Hersteller", help="Herstellername für BMEcat/Report")
         s.add_argument("--gln", default=None)
         s.add_argument("--include-review", action="store_true", help="auch unsichere Artikel exportieren")
+        if name == "compare":
+            s.add_argument("--reuse-gemini", action="store_true",
+                           help="Gemini aus classified.json übernehmen, nur Jev neu fragen")
+            s.add_argument("--features", action="store_true",
+                           help="auch ETIM-Merkmale vergleichen (Typ L als Noul, Typ A als Choice)")
 
     s = sub.add_parser("review", help="Review-CSV eines Jobs zusammenfassen")
     s.add_argument("job_dir", type=Path)
 
     s = sub.add_parser("ui", help="Prüf-Cockpit im Browser öffnen")
-    s.add_argument("job_dir", type=Path, help="Ordner unter out/, z. B. out/demo")
+    s.add_argument("job_dir", type=Path, help="Ordner unter out/, z. B. out/demo — oder out/ selbst")
+    s.add_argument("--port", type=int, default=8000)
+    s.add_argument("--no-open", action="store_true", help="Browser nicht automatisch öffnen")
+
+    s = sub.add_parser("studio", help="Cockpit über allen Jobs: Katalog hochladen, Lauf starten")
+    s.add_argument("--out", type=Path, default=None, help="Verzeichnis der Jobs (Vorgabe: out/)")
     s.add_argument("--port", type=int, default=8000)
     s.add_argument("--no-open", action="store_true", help="Browser nicht automatisch öffnen")
 
@@ -67,6 +78,11 @@ def main(argv=None):
         from .ui import run as run_ui
 
         run_ui(a.job_dir, a.port, not a.no_open)
+        return
+    if a.cmd == "studio":
+        from .ui import run as run_ui
+
+        run_ui(a.out or config.OUT, a.port, not a.no_open)
         return
     if a.cmd == "review":
         import csv
@@ -95,6 +111,11 @@ def main(argv=None):
         from . import classify
 
         classify.run(out_dir)
+    if a.cmd == "compare":
+        from . import compare
+
+        compare.run(out_dir, reuse_gemini=a.reuse_gemini, with_features=a.features)
+        return
     if a.cmd in ("features", "run"):
         from . import features
 

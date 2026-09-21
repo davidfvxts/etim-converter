@@ -20,8 +20,10 @@ features classified -> enriched.json         (LLM füllt ETIM-Merkmale aus Werte
 export   enriched  -> catalog.bmecat.xml     (BMEcat 2005 + ETIM)
 validate xml       -> validation.json        (XSD wenn vorhanden, sonst Strukturregeln)
 report   enriched  -> report.md              (Vollständigkeit, Konfidenzen, Review-Queue)
+compare  products  -> compare.json            (Gemini gegen Jev auf derselben Retrieval-Liste)
 run      = alles nacheinander
-ui       enriched  -> Prüf-Cockpit im Browser (Freigaben -> review.decisions.json)
+ui       job       -> Prüf-Cockpit im Browser (Freigaben -> review.decisions.json)
+studio   out/      -> dasselbe Cockpit über allen Jobs: Katalog einspielen, Lauf starten
 ```
 
 ## Wichtige Regeln
@@ -35,8 +37,67 @@ ui       enriched  -> Prüf-Cockpit im Browser (Freigaben -> review.decisions.js
 - **Konfidenz < 0.75 → Review-Queue**, nicht exportieren ohne Freigabe.
 - Alle LLM-Aufrufe laufen über `etim/llm.py`. Kein direkter SDK-Aufruf woanders.
   `ETIM_DRY_RUN=1` ersetzt LLM-Aufrufe durch deterministische Fakes (für Tests).
+- **Alle Jev-Aufrufe laufen über `etim/jev.py`**, genauso wie Gemini über `llm.py`. Kein
+  direkter HTTP-Aufruf woanders. Im Trockenlauf trägt jede Jev-Antwort `simulated=True`;
+  das Feld wird bis ins Dashboard durchgereicht. **Ohne Jev-Zugang darf nichts wie ein
+  Jev-Ergebnis aussehen** — keine große Prozentzahl für ein Modell, das nicht gemessen wurde.
+- **Ohne `reference.json` keine Trefferquote.** Stattdessen Abdeckung, Variantenkonsistenz
+  und unbelegte Codes. Eine Quote gegen eine Wahrheit, die niemand festgelegt hat, ist keine.
+- Hochgeladene Kataloge sind Kundendaten: sie liegen in `out/<job>/source/` und nie im Repo.
 - Kosten: pro Artikel ≤ 3 LLM-Calls (classify, features, ggf. counter-check). Batching bevorzugen.
 - Keine neuen Abhängigkeiten ohne Grund. Stack: python 3.11+, google-genai, pydantic, lxml, pypdf, numpy.
+
+## Wo Jev eingesetzt wird — und wo nicht
+
+Jev (TypeSafe System One, über Cloudflare Workers AI als `typesafe/jev`) beantwortet getypte
+Fragen gegen einen Zustand und gibt kalibrierte Wahrscheinlichkeiten zurück. Er erzeugt **keinen
+Text**. Daraus folgt die Aufteilung — nicht aus Vorliebe, sondern aus der Form der Aufgabe:
+Jev urteilt, Gemini liest und schreibt.
+
+**Jev bekommt:**
+
+- **Klassenwahl als Choice über 254 Kandidaten.** Das ist der eigentliche Grund. Im
+  strawa-Trockenlauf lag die richtige Klasse auf Rang 10–62 der Retrieval-Liste; Gemini sieht
+  davon die Top-20 und konnte sie bei 14 von 17 Artikeln gar nicht wählen. Jev erlaubt 255
+  Optionen je Choice — 254 Kandidaten plus `none` für „keine passt“. Damit wird aus einem
+  Retrieval-Problem eine Modellentscheidung. Und: Jev kann keinen Code ausgeben, der nicht in
+  der Optionsliste steht — die erfundenen EC-Codes aus dem strawa-Lauf sind hier strukturell
+  ausgeschlossen, nicht nur unwahrscheinlich.
+- **Strukturierte Optionsbeschreibungen (`what` / `not_for` / `examples`).** Jev liest JSON in
+  den Optionen. Jede Klasse bekommt darum benannte Felder statt eines verklebten Satzes, und
+  vor allem ein `not_for`, das die Grenze Hauptprodukt gegen „Accessories/spare parts for …“
+  ausspricht: Zubehörklassen bekommen „nicht das Produkt selbst“, Hauptproduktklassen „nicht
+  das Zubehör dazu“. Das ist die Grenze, an der die Zuordnung am häufigsten kippt.
+  Passt das Feld nicht ins 32k-Fenster, werden die Beschreibungen stufenweise gekürzt
+  (`voll` → `ohne Merkmalslisten` → `knapp` → `nur Klassentext`), erst danach das Feld selbst —
+  und die Stufe steht am Ergebnis.
+- **Zwei Fragen in einem Aufruf:** Klasse (Choice) und „ist das Zubehör/Ersatzteil?“ (Noul)
+  gegen denselben Zustand. Fragen laufen parallel und sind voneinander unabhängig — Jev nutzt
+  die Klassenantwort nicht als Kontext. Genau deshalb ist die Zubehörfrage ein echtes
+  Gegensignal und keine Nacherzählung der ersten Antwort. Kostet ein paar Token, kaum Zeit.
+- **Merkmale, soweit sie eine feste Antwortmenge haben:** logische Merkmale (Typ L) als Noul,
+  Wertelisten (Typ A) als Choice über die EV-Codes, alle Merkmale eines Artikels in einem Aufruf.
+- **Kalibrierte Konfidenz als Review-Signal.** Geminis Konfidenz liegt auch bei strittigen
+  Fällen bei 0.90–0.95 und taugt als Schwelle nichts (siehe Stand-Block). Jevs Konfidenz kommt
+  aus der Form der Wahrscheinlichkeitsverteilung. Ob sie besser trennt, misst der Vergleich —
+  „Konfidenz bei richtiger gegen falsche Antwort“ ist genau diese Zahl.
+
+**Jev bekommt nicht:**
+
+- **`ingest`** (PDF → Artikel): Artikel aus Katalogseiten zu extrahieren heißt Text erzeugen.
+  Jev wählt nur aus Vorgegebenem. Bleibt Gemini.
+- **Numerische Merkmale (Typ N) und Bereiche (Typ R):** „Einbauhöhe 130 mm“ steht in keiner
+  Optionsliste. Bleibt Gemini; jedes ausgelassene Merkmal trägt im Vergleich die Begründung.
+- **Quellzitate:** Jev liefert keinen Beleg, weil er keinen Text erzeugt. **Die Quellzitat-Pflicht
+  gilt trotzdem:** wählt Jev einen Merkmalswert, kommt der Beleg aus Geminis Antwort zum selben
+  Merkmal — und wenn Gemini dafür kein Zitat hat, ist der Wert nicht exportfähig und geht ins
+  Review. Ein von Jev gewählter Wert ohne Katalogbeleg landet nie im BMEcat.
+- **`report.md`:** Fließtext für den Hersteller. Bleibt Gemini.
+
+**Offene Frage, die der Vergleich beantworten soll:** Jev ist laut Modellkarte primär auf
+Englisch trainiert („andere Sprachen werden verarbeitet, aber nicht gleich gut“). Kundenkataloge
+sind deutsch, die ETIM-Klassentexte englisch. Der Artikelzustand geht darum unübersetzt hinein,
+mit einem Sprachhinweis — gemessen wird, nicht angenommen.
 
 ## Befehle
 
@@ -48,12 +109,58 @@ python -m etim load-model data/etim        # baut data/cache/etim.sqlite + Embed
 python -m etim run katalog.pdf --job demo  # ganze Pipeline
 python -m etim review out/demo             # Review-Tabelle (CSV) für Artikel unter Schwelle
 python -m etim ui out/demo                 # Prüf-Cockpit im Browser (stdlib-Server, kein Build)
+python -m etim studio                      # Cockpit über allen Jobs: hochladen, Lauf starten
+python -m etim compare --job demo          # Gemini gegen Jev auf derselben Kandidatenliste
+python -m etim compare --job demo --reuse-gemini --features
 python scripts/make_demo_data.py           # Beispieldaten der Oberfläche neu erzeugen
 python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei zum Teilen
 ```
 
 ## Stand / Nächste Schritte (aktualisiere diesen Block nach jeder Session)
 
+- [x] **Jev als zweites Modell eingebaut, Dashboard erweitert** (21.9.2026). Neu: `etim/jev.py`
+      (einziger Aufrufort, wie `llm.py` für Gemini), `etim/compare.py`, `etim/studio.py`,
+      `worker/` und im Cockpit die Ansichten **Katalog** (Drag & Drop, Lauf starten, Fortschritt,
+      Fehler im Browser) und **Vergleich** (Kennzahlen je Modell, beide Antworten je Artikel
+      nebeneinander). Testlage: **38 statt 5 Tests**, alle grün im Trockenlauf; der Upload-Weg
+      ist inklusive HTTP-Schicht getestet (falscher Inhalt, Kollision, Traversal, fremder Origin,
+      zweiter Lauf auf demselben Job). Die Oberfläche ist im Browser durchgespielt worden —
+      Upload → Job → Lauf → Vergleich, hell und dunkel, und die geteilte Vorschau ohne Server.
+      Jev-Anfrageform gegen die Doku geprüft und in `tests/test_jev.py` festgenagelt:
+      `POST /ai/run` mit `{"model":"typesafe/jev","input":{state,questions}}`, Antwort unter
+      `result`; Choice max. 255 Optionen; Noul liefert **nur** `noul` (keine `confidence`);
+      Score 2–10 Stufen; Kontext 32k; Output kostenlos.
+- [ ] **NICHT GEMESSEN: der echte Lauf fehlt — diese Umgebung kann ihn nicht fahren.** Der Code
+      ist vollständig und getestet, aber jede Zahl im Dashboard stammt bisher aus dem Trockenlauf
+      und ist als `simuliert` gekennzeichnet. Vier Gründe, alle Umgebung, keiner Code:
+      1. **Netz-Policy:** `api.cloudflare.com`, `api.typesafe.ai`, `*.workers.dev`,
+         `developers.cloudflare.com` und `docs.typesafe.ai` antworten alle mit **403 auf CONNECT**.
+         Ein Jev-Aufruf ist von hier aus unmöglich — weder über den Worker noch direkt.
+         (`generativelanguage.googleapis.com` ist offen, Gemini ginge also.)
+      2. **Kein `GEMINI_API_KEY`** — es gibt keine `.env` im Container.
+      3. **Keine ETIM-Daten.** `data/etim/` und `data/cache/` sind gitignored und leer; ohne die
+         5.640 Klassen und die Embeddings gibt es kein Kandidatenfeld, aus dem Jev wählen könnte.
+      4. **Weder das PDF noch der Job `strawa`.** `~/Documents/etim-testkataloge/` existiert hier
+         nicht, `out/` ist leer. Beides ist gitignored und kam mit dem frischen Clone nicht mit.
+      **Was David tun muss, damit die Zahlen entstehen** (lokal, wo Netz und Daten da sind):
+      `cd worker && npx wrangler secret put ETIM_PROXY_SECRET && npx wrangler deploy`, dann in
+      `.env` `ETIM_JEV_WORKER_URL`/`ETIM_JEV_WORKER_SECRET` eintragen, `python -m etim load-model
+      data/etim`, `python -m etim studio`, das strawa-PDF ins Ablagefeld ziehen — und für den
+      Job `strawa` zusätzlich `out/strawa/reference.json` anlegen
+      (`{"<artikelnr>": "EC004089", ...}`), sonst gibt es bewusst keine Trefferquote.
+      **Bis dahin steht im Dashboard kein Jev-Ergebnis, das keines ist.**
+- [ ] **Cloudflare-Worker: gefunden, aber nicht lesbar.** Im Account liegt ein Worker
+      **`etim-converter`** (angelegt 21.9.2026 10:37, also kurz vor dieser Sitzung). Gesucht
+      wurde gründlich: Cloudflare-MCP (`workers_list` findet ihn, `workers_get_worker_code`
+      liefert `null`), `wrangler` nicht installiert und die API ohnehin blockiert, keine
+      `wrangler.toml` im Repo oder auf der Maschine, `~/Projekte` existiert hier nicht.
+      **Was er tut, ist damit offen.** Deshalb ist der neue Worker bewusst
+      **`etim-jev-proxy`** genannt statt `etim-converter` — ein Deployment hätte den
+      bestehenden sonst überschrieben. **Rückfrage an David:** Wenn `etim-converter` ohnehin
+      nur Jev vorschalten soll, `name` in `worker/wrangler.toml` auf `etim-converter` ändern;
+      wenn er etwas anderes tut, bleibt es beim eigenen Worker. Kein offener Proxy: nur
+      `POST /jev` und `GET /health`, beide mit Shared Secret (SHA-256 → `timingSafeEqual`),
+      das Modell steht fest im Quelltext, der Rumpf muss die Form eines System-One-Aufrufs haben.
 - [x] **Echte ETIM-Daten liegen vor** (14.9.2026). Der Blocker war reine Netz-Policy, nicht der
       Server: `www.etim-international.com` liefert sowohl in der Remote-Umgebung als auch im
       lokalen Geräte-Shell 403 auf CONNECT. Beschafft wurden die beiden nötigen ZIPs deshalb
@@ -222,7 +329,11 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
 - `etim/export_bmecat.py` — XML-Writer
 - `etim/validate.py` — XSD/Strukturprüfung
 - `etim/report.py` — Markdown-Report + Review-CSV
-- `etim/ui.py` — Prüf-Cockpit: stdlib-Server, liefert den Job als JSON, nimmt Freigaben entgegen
+- `etim/jev.py` — Jev-Wrapper (Choice/Score/Noul, Worker- oder Cloudflare-Transport, DRY_RUN)
+- `etim/compare.py` — Gemini gegen Jev: Kandidatenfeld, Kennzahlen, Merkmalsvergleich
+- `etim/studio.py` — Upload, Jobanlage, Läufe im Hintergrund (ohne HTTP, darum testbar)
+- `etim/ui.py` — Prüf-Cockpit: stdlib-Server, liefert Jobs als JSON, nimmt Upload und Freigaben entgegen
+- `worker/` — Cloudflare-Worker als Jev-Vorschaltung (Secret dort, nicht in der App)
 - `web/` — Oberfläche. `assets/tokens.css` ist der einzige Ort für Farb-/Typo-/Rasterwerte,
   `assets/components.js` die Komponentenschicht. Kein Build, keine npm-Abhängigkeit.
 - `docs/cowork-prompt-etim-download.md` — Prompt für die lokale Cowork-Session (ETIM-Download)

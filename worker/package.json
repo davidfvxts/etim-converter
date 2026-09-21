@@ -1,0 +1,15 @@
+{
+  "name": "etim-jev-proxy",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250900.0",
+    "typescript": "^5.6.0",
+    "wrangler": "^3.90.0"
+  }
+}

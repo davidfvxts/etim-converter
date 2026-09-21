@@ -75,3 +75,117 @@ class Job(BaseModel):
     supplier_name: str
     source_file: str
     etim_version: str
+
+
+# --- Modellvergleich Gemini gegen Jev ------------------------------------------
+
+
+class ReasoningCode(BaseModel):
+    """Ein EC-Code, den ein Modell in seiner Begründung genannt hat, gegengeprüft."""
+    code: str
+    known: bool = Field(description="Existiert der Code in der geladenen ETIM-Klassentabelle?")
+    desc: str = Field(default="", description="Klassentext, falls bekannt")
+
+
+class ModelAnswer(BaseModel):
+    """Die Antwort eines Modells auf einen Artikel — vergleichbar gemacht."""
+    model: str = Field(description="'gemini' oder 'jev'")
+    class_id: Optional[str] = None
+    confidence: float = 0.0
+    reasoning: str = Field(default="", description="Nur Gemini — Jev erzeugt keinen Text")
+    reasoning_codes: list[ReasoningCode] = Field(default_factory=list)
+    runner_up: Optional[str] = None
+    probabilities: dict[str, float] = Field(default_factory=dict, description="Nur Jev, gekürzt auf die stärksten Optionen")
+    is_accessory: Optional[float] = Field(default=None, description="Nur Jev: Noul-Wahrscheinlichkeit 'Zubehör/Ersatzteil'")
+    candidates_seen: int = 0
+    rank_of_choice: Optional[int] = Field(default=None, description="Rang der gewählten Klasse in der Retrieval-Liste (1-basiert)")
+    trim_level: str = Field(default="", description="Nur Jev: wie stark die Optionsbeschreibungen gekürzt wurden")
+    latency_ms: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
+    simulated: bool = False
+    error: Optional[str] = None
+
+
+class FeatureAnswer(BaseModel):
+    """Ein Merkmalswert eines Modells, mit Belegstatus."""
+    feature_id: str
+    value: Optional[str] = None
+    confidence: float = 0.0
+    source: Optional[str] = Field(default=None, description="Quellzitat — bei Jev immer von Gemini übernommen")
+    source_from: str = Field(default="", description="'gemini' wenn der Beleg von Gemini stammt")
+    exportable: bool = Field(default=False, description="Wert belegt und damit exportfähig")
+    reason: Optional[str] = None
+
+
+class FeatureComparison(BaseModel):
+    supplier_pid: str
+    class_id: str
+    feature_meta: dict[str, dict] = Field(default_factory=dict)
+    answers: dict[str, list[FeatureAnswer]] = Field(default_factory=dict)
+    jev_skipped: dict[str, str] = Field(default_factory=dict, description="feature_id -> Grund, warum Jev nicht gefragt wurde")
+    jev_latency_ms: int = 0
+    jev_cost_usd: float = 0.0
+    jev_simulated: bool = False
+    error: Optional[str] = None
+
+
+class ComparisonItem(BaseModel):
+    product: Product
+    base_name: str = Field(description="Bezeichnung ohne Variantenteil — Grundlage der Konsistenzprüfung")
+    reference_class: Optional[str] = None
+    reference_rank: Optional[int] = Field(default=None, description="Rang der Referenzklasse in der Retrieval-Liste")
+    retrieval: list[ClassCandidate] = Field(default_factory=list)
+    answers: dict[str, ModelAnswer] = Field(default_factory=dict)
+
+
+class ModelMetrics(BaseModel):
+    model: str
+    label: str
+    model_id: str = Field(default="", description="Modellkennung, getrennt vom Anzeigenamen")
+    n: int = 0
+    errors: int = 0
+    simulated: bool = False
+    no_class: int = 0
+    candidates_seen: int = 0
+    hits: Optional[int] = None
+    hit_rate: Optional[float] = None
+    reference_in_window: Optional[int] = Field(default=None, description="Wie oft die Referenzklasse überhaupt im Kandidatenfeld lag")
+    variant_groups: int = 0
+    variant_consistent: int = 0
+    variant_consistency: Optional[float] = None
+    reasoning_codes: int = 0
+    unverified_codes: int = 0
+    conf_correct: Optional[float] = None
+    conf_wrong: Optional[float] = None
+    latency_ms_avg: int = 0
+    latency_ms_total: int = 0
+    cost_usd: float = 0.0
+    # Merkmale
+    feat_articles: int = 0
+    feat_total: int = 0
+    feat_filled: int = 0
+    feat_exportable: int = 0
+    feat_cost_usd: float = 0.0
+    feat_latency_ms_total: int = 0
+
+
+class Comparison(BaseModel):
+    job: str
+    created: str
+    etim_version: str = ""
+    gemini_model: str = ""
+    jev_model: str = ""
+    jev_status: dict = Field(default_factory=dict)
+    has_reference: bool = False
+    n_reference: int = 0
+    reused_gemini: bool = False
+    with_features: bool = False
+    top_k_gemini: int = 0
+    top_k_jev: int = 0
+    items: list[ComparisonItem] = Field(default_factory=list)
+    features: list[FeatureComparison] = Field(default_factory=list)
+    metrics: dict[str, ModelMetrics] = Field(default_factory=dict)
+    agreement: dict = Field(default_factory=dict, description="Übereinstimmung der Modelle untereinander")
+    notes: list[str] = Field(default_factory=list)
