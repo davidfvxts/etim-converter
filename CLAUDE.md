@@ -28,6 +28,11 @@ studio   out/      -> dasselbe Cockpit über allen Jobs: Katalog einspielen, Lau
 
 ## Wichtige Regeln
 
+- **Mehrere ETIM-Versionen nebeneinander**: `data/etim/<version>/`, je Version eine eigene
+  SQLite-Datenbank **und** eigene Embeddings (`etim/versions.py`). Klassen-IDs sind zwischen
+  Versionen nicht stabil — ein geteilter Cache ordnet still falsch zu. `etim_version` steht
+  an jedem Artikel; `features` bricht bei Versionsbruch ab, der Export schreibt die Version
+  des Jobs, nicht die eingestellte.
 - **ETIM-Daten liegen in `data/etim/`** (CSV-Export von etim-international.com, ETIM 10.0 English,
   Lizenz ODC-By — Attribution in README behalten). Die deutsche Sprachversion ist
   Mitgliederleistung von ETIM Deutschland: nicht herunterladen, nicht einbauen, bis David
@@ -112,7 +117,8 @@ make env                        # Zugangsdaten gefuehrt eintragen (verdeckte Ein
 make env-show                   # zeigen, was eingetragen ist (Secrets maskiert)
 make jev                        # Worker deployen, .env einrichten
 make jev-check                  # echter Mini-Aufruf: antwortet Jev?
-make load-model                 # ETIM-CSV -> SQLite + Embeddings
+make versions                   # welche ETIM-Versionen liegen vor
+make load-model ETIM=9.0        # eine bestimmte Version laden (ohne ETIM=: Vorgabe)
 make studio                     # Cockpit im Browser
 make compare JOB=strawa         # Gemini gegen Jev (nur Messung)
 python -m etim classify --job strawa --model jev   # Jev als Klassifizierer der Pipeline
@@ -201,6 +207,22 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
       Fehlt das venv, sagt `make` das im Klartext statt mit einem Pfadfehler.
       In der README steht eine kleine Fehlertabelle fuer macOS (Xcode-Lizenz sperrt `git`
       und `make`, falscher Ordner, fehlendes `python`).
+- [x] **ETIM 8/9/10 waehlbar** (21.9.2026, Wunsch von David: aeltere Versionen zum Testen).
+      Neu `etim/versions.py`: Normalisierung (`ETIM-8`/`8`/`8.0` -> `8.0`), Ablage unter
+      `data/etim/<version>/`, **je Version eigene `etim-<v>.sqlite` und `class_emb-<v>.npz`**.
+      Der Grund fuer die strikte Trennung: Klassen-IDs sind zwischen ETIM-Versionen nicht
+      stabil — ein geteilter Embedding-Cache wuerde ohne jede Fehlermeldung falsche Klassen
+      liefern, dieselbe Fehlerklasse wie der Embedding-Bug vom 14.9.
+      Durchgesetzt an drei Stellen: `etim_version` an jedem Artikel in `classified.json` und
+      `enriched.json`; `features.run` bricht ab, wenn die geladene Version nicht zur
+      Klassenentscheidung passt; `export_bmecat` schreibt die Version des Jobs, nicht die
+      gerade in der `.env` stehende.
+      **Bestandsschutz:** liegt nur der alte, unversionierte Cache (`etim.sqlite`,
+      `class_emb.npz`) vor, gilt er weiter fuer die Vorgabeversion — Davids frisch gebaute
+      5.640 Klassen muessen nicht neu gerechnet werden.
+      CLI: `--etim` auf load-model/classify/run/compare, `python -m etim versions` zeigt den
+      Zustand aller Versionen. Im Cockpit Karten unter **Katalog**; nicht geladene sind
+      ausgegraut und nennen im Tooltip, was fehlt. Tests: **56 statt 48**.
 - [x] **`make env-show`** (21.9.2026). David fragte, wo die Cloudflare-Keys eigentlich
       eingetragen seien — er hatte nie welche getippt. Genau richtig: `make jev` erzeugt das
       Secret selbst, hinterlegt es beim Worker und schreibt es in die `.env`; auf dem

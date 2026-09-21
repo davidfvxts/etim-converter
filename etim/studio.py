@@ -24,7 +24,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from . import config
+from . import config, versions
 
 ALLOWED = {".pdf": "PDF", ".xlsx": "Excel", ".csv": "CSV"}
 SOURCE_DIR = "source"
@@ -152,6 +152,17 @@ def _classifier_label(job_dir: Path) -> str:
     return " und ".join(LABELS.get(m, m) for m in models)
 
 
+def _etim_label(job_dir: Path) -> str:
+    try:
+        rows = json.loads((job_dir / "classified.json").read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, FileNotFoundError):
+        return ""
+    if not isinstance(rows, list):
+        return ""
+    vs = sorted({r.get("etim_version", "") for r in rows if isinstance(r, dict)} - {""})
+    return ", ".join(versions.label(v) for v in vs)
+
+
 def job_summary(job_dir: Path) -> dict:
     meta_path = job_dir / "job.json"
     meta: dict[str, Any] = {}
@@ -169,6 +180,7 @@ def job_summary(job_dir: Path) -> dict:
         "products": _count(job_dir / "products.json"),
         "has_classified": (job_dir / "classified.json").exists(),
         "classifier": _classifier_label(job_dir),
+        "etim": _etim_label(job_dir),
         "has_enriched": (job_dir / "enriched.json").exists(),
         "has_compare": (job_dir / "compare.json").exists(),
         "has_reference": (job_dir / "reference.json").exists(),
@@ -191,6 +203,7 @@ class RunState:
     job: str
     kind: str
     classifier: str = "gemini"      # gemini | jev | both
+    etim_version: str = ""          # 8.0 | 9.0 | 10.0
     state: str = "running"          # running | done | error
     stage: str = ""
     stage_label: str = ""
@@ -207,6 +220,7 @@ class RunState:
         return {
             "job": self.job, "kind": self.kind, "classifier": self.classifier,
             "classifier_label": LABELS.get(self.classifier, self.classifier),
+            "etim_version": self.etim_version,
             "state": self.state,
             "stage": self.stage, "stage_label": self.stage_label,
             "done": self.done, "total": self.total, "message": self.message,
@@ -234,12 +248,16 @@ def run_state(job: str) -> dict | None:
 
 def start(job_dir: Path, *, kind: str = "compare", reuse_gemini: bool = False,
           with_features: bool = False, pages: tuple[int, int] | None = None,
-          classifier: str | None = None) -> dict:
+          classifier: str | None = None, etim_version: str | None = None) -> dict:
     """Einen Lauf im Hintergrund starten. Je Job laeuft hoechstens einer."""
     job = job_dir.name
     classifier = (classifier or config.CLASSIFIER).lower()
     if classifier not in config.CLASSIFIERS:
         raise UploadError(f"Unbekanntes Modell '{classifier}'.")
+    etim_version = versions.normalize(etim_version)
+    st_v = versions.status(etim_version)
+    if not st_v["ready"]:
+        raise UploadError(f"ETIM {etim_version} ist nicht einsatzbereit. {st_v['missing']}")
     with _LOCK:
         if active(job):
             raise UploadError(f"Fuer '{job}' laeuft bereits ein Lauf.")
@@ -251,20 +269,23 @@ def start(job_dir: Path, *, kind: str = "compare", reuse_gemini: bool = False,
             stages.insert(0, "ingest")
         if with_features:
             stages.append("features")
-        st = RunState(job=job, kind=kind, classifier=classifier, stages=stages,
+        st = RunState(job=job, kind=kind, classifier=classifier,
+                      etim_version=etim_version, stages=stages,
                       started=datetime.now(timezone.utc).isoformat(timespec="seconds"),
                       stage=stages[0], stage_label=STAGE_LABELS[stages[0]],
                       message="Lauf gestartet")
         RUNS[job] = st
 
     t = threading.Thread(target=_worker, name=f"etim-run-{job}", daemon=True,
-                         args=(job_dir, st, kind, reuse_gemini, with_features, pages, classifier))
+                         args=(job_dir, st, kind, reuse_gemini, with_features, pages,
+                               classifier, etim_version))
     t.start()
     return st.as_dict()
 
 
 def _worker(job_dir: Path, st: RunState, kind: str, reuse_gemini: bool,
-            with_features: bool, pages: tuple[int, int] | None, classifier: str) -> None:
+            with_features: bool, pages: tuple[int, int] | None, classifier: str,
+            etim_version: str) -> None:
     def tick(stage: str, done: int, total: int, message: str) -> None:
         st.stage, st.stage_label = stage, STAGE_LABELS.get(stage, stage)
         st.done, st.total, st.message = done, total, message
@@ -290,7 +311,7 @@ def _worker(job_dir: Path, st: RunState, kind: str, reuse_gemini: bool,
 
         from .model import EtimModel
 
-        etim_model = EtimModel()
+        etim_model = EtimModel(version=etim_version)
         if classifier == "both":
             from . import compare
 
@@ -301,7 +322,7 @@ def _worker(job_dir: Path, st: RunState, kind: str, reuse_gemini: bool,
         else:
             from . import classify
 
-            tick(classifier, 0, 0, f"Klassifizieren mit {LABELS[classifier]}")
+            tick(classifier, 0, 0, f"Klassifizieren mit {LABELS[classifier]} gegen ETIM {etim_version}")
             rows = classify.run(job_dir, etim_model, classifier=classifier)
             n_none = sum(1 for r in rows if not r.decision.class_id)
             tick(classifier, len(rows), len(rows), "fertig")

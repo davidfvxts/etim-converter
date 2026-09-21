@@ -70,6 +70,35 @@ kein Build, keine npm-Abhängigkeit, läuft offline. `web/assets/tokens.css` ist
 für Farb-, Typo- und Rasterwerte. `python scripts/build_preview.py` erzeugt daraus eine einzelne
 HTML-Datei zum Weitergeben (zeigt Beispieldaten, keinen Job).
 
+## ETIM-Version wählen
+
+Mehrere Versionen liegen nebeneinander. Jede bekommt eine eigene Datenbank **und** eigene
+Klassen-Embeddings — Klassen-IDs sind zwischen ETIM-Versionen nicht stabil, ein geteilter
+Cache würde stillschweigend falsch zuordnen.
+
+```
+data/etim/8.0/    CSV-Release ETIM 8.0     entpackt von etim-international.com
+data/etim/9.0/    CSV-Release ETIM 9.0
+data/etim/10.0/   CSV-Release ETIM 10.0    (oder direkt in data/etim/)
+```
+
+```bash
+make versions                 # was liegt vor, was fehlt
+make load-model ETIM=9.0      # ETIM 9.0 laden und Embeddings bauen
+make load-model               # Vorgabeversion aus ETIM_VERSION
+python -m etim classify --job demo --etim 9.0
+```
+
+Im Cockpit stehen die Versionen unter **Katalog** als Karten; nicht geladene sind ausgegraut
+und nennen beim Überfahren, was fehlt. Welche Version einen Job klassifiziert hat, steht in der
+Kopfzeile, auf der Übersicht und als Spalte in der Jobliste.
+
+**Durchgesetzt wird die Trennung an drei Stellen:** `classified.json` und `enriched.json` tragen
+`etim_version` je Artikel; `features` bricht ab, wenn die geladene Version nicht zur
+Klassenentscheidung passt; und der BMEcat-Export schreibt die Version des Jobs, nicht die
+gerade eingestellte — ein gegen ETIM 9 klassifizierter Katalog darf sich nicht als ETIM 10
+ausgeben.
+
 ## Klassifizierungsmodell wählen
 
 Die ETIM-Klasse kann Gemini wählen, Jev, oder beide zum Vergleich:

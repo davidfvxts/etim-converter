@@ -18,7 +18,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import config, jev, studio
+from . import config, jev, studio, versions
 
 WEB = config.ROOT / "web"
 DECISIONS = "review.decisions.json"
@@ -54,7 +54,8 @@ def _human(n: float) -> str:
     return f"{n:.1f} GB"
 
 
-def _value_labels(enriched: list[dict], extra_classes: list[str] = ()) -> dict[str, str]:
+def _value_labels(enriched: list[dict], extra_classes: list[str] = (),
+                  etim_version: str | None = None) -> dict[str, str]:
     """EV-Codes in Klartext auflösen, damit die Oberfläche keine nackten Codes zeigt.
 
     Ohne geladenes Modell (data/cache/etim.sqlite fehlt) bleibt die Zuordnung leer —
@@ -68,7 +69,8 @@ def _value_labels(enriched: list[dict], extra_classes: list[str] = ()) -> dict[s
     try:
         from .model import EtimModel
 
-        model = EtimModel()
+        # Wertelisten aus der Version des Jobs — Codes bedeuten anderswo anderes.
+        model = EtimModel(version=etim_version)
         labels: dict[str, str] = {}
         for cid in class_ids:
             for feat in model.features_for(cid):
@@ -89,8 +91,11 @@ def _classifier_of(classified: list) -> dict:
     if not classified:
         return {}
     models = {r.get("model", "gemini") for r in classified}
+    etim = sorted({r.get("etim_version", "") for r in classified} - {""})
     return {
         "models": sorted(models),
+        "etim": etim,
+        "etim_label": ", ".join(versions.label(v) for v in etim),
         "label": " und ".join(studio.LABELS.get(m, m) for m in sorted(models)),
         "mixed": len(models) > 1,
         "simulated": any(r.get("simulated") for r in classified),
@@ -113,12 +118,14 @@ def payload(job_dir: Path) -> dict:
         "config": {
             "review_threshold": config.REVIEW_THRESHOLD,
             "min_coverage": config.MIN_COVERAGE,
-            "etim_version": config.ETIM_VERSION,
+            "etim_version": versions.label(_classifier_of(classified).get("etim", [None])[0]
+                                           if classified else None),
             "top_k": config.TOP_K_CLASSES,
             "jev_top_k": config.JEV_TOP_K,
             "max_upload_mb": config.MAX_UPLOAD_MB,
             "classifier": config.CLASSIFIER,
             "classifiers": list(config.CLASSIFIERS),
+            "etim_default": versions.default(),
         },
         "products": products.get("products", []) if isinstance(products, dict) else products,
         "classified": classified,
@@ -127,7 +134,8 @@ def payload(job_dir: Path) -> dict:
         "compare": compare,
         "validation": _load(job_dir / "validation.json", None),
         "decisions": _load(job_dir / DECISIONS, {}),
-        "labels": _value_labels(enriched, extra),
+        "labels": _value_labels(enriched, extra,
+                                next((e.get("etim_version") for e in enriched if e.get("etim_version")), None)),
         "files": files,
         "jev": jev.status(),
         "run": studio.run_state(job_dir.name),
@@ -197,6 +205,8 @@ class Handler(SimpleHTTPRequestHandler):
                     "allowed": sorted(studio.ALLOWED),
                     "classifier": config.CLASSIFIER,
                     "classifiers": list(config.CLASSIFIERS),
+                    "etim_default": versions.default(),
+                    "etim_versions": versions.available(),
                 })
             if route == "/api/job":
                 job_dir = self._job_dir(q.get("job", ""))
@@ -281,6 +291,7 @@ class Handler(SimpleHTTPRequestHandler):
             pages = (int(data["pages"][0]), int(data["pages"][1]))
         state = studio.start(job_dir, kind=kind,
                              classifier=str(data.get("classifier") or "") or None,
+                             etim_version=str(data.get("etim_version") or "") or None,
                              reuse_gemini=bool(data.get("reuse_gemini")),
                              with_features=bool(data.get("with_features")),
                              pages=pages)

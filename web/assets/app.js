@@ -15,7 +15,8 @@ const state = {
   compare: null, jev: null, run: null, meta: {},
   jobs: [], jobsLoaded: false, serverUp: false, busy: '',
   cmpSelected: null, cmpFilter: 'all', cmpQuery: '',
-  runOpts: { reuse_gemini: false, with_features: false, classifier: 'gemini' },
+  runOpts: { reuse_gemini: false, with_features: false, classifier: 'gemini', etim_version: '' },
+  etimVersions: [],
 };
 
 /* ---------------------------------------------------------------- Ableitungen */
@@ -129,7 +130,9 @@ function ViewOverview() {
       icon(state.classifier.models?.includes('jev') ? 'scale' : 'spark', 'runinfo__icon'),
       el('div', {},
         el('div', { class: 'runinfo__title' },
-          'Klassifiziert mit ', el('strong', {}, state.classifier.label)),
+          'Klassifiziert mit ', el('strong', {}, state.classifier.label),
+          state.classifier.etim_label
+            ? el('span', {}, ' gegen ', el('strong', {}, state.classifier.etim_label)) : null),
         el('div', { class: 'runinfo__sub' },
           state.classifier.simulated
             ? 'Trockenlauf — diese Antworten sind simuliert, nicht gemessen.'
@@ -361,6 +364,13 @@ async function loadJobs() {
     state.jobs = d.jobs || [];
     state.jev = d.jev || state.jev;
     if (d.classifier && !state.classifierTouched) state.runOpts.classifier = d.classifier;
+    state.etimVersions = d.etim_versions || [];
+    if (!state.runOpts.etim_version) {
+      // Vorauswahl: die eingestellte Version, sonst die erste einsatzbereite.
+      const ready = state.etimVersions.filter(v => v.ready);
+      state.runOpts.etim_version =
+        (ready.find(v => v.version === d.etim_default) || ready[0] || {}).version || d.etim_default || '';
+    }
     state.serverUp = true;
   } catch {
     // Datei direkt im Browser geöffnet (geteilte Vorschau): kein Server, keine Jobs.
@@ -486,6 +496,35 @@ function ModelPicker() {
   );
 }
 
+/** Gegen welche ETIM-Version wird klassifiziert? Nur einsatzbereite sind wählbar. */
+function EtimPicker() {
+  const running = state.run?.state === 'running';
+  const list = state.etimVersions;
+  if (!list.length) return null;
+  const chosen = state.runOpts.etim_version;
+  const none = !list.some(v => v.ready);
+  return el('div', { class: 'picker' },
+    el('div', { class: 'label' }, 'ETIM-Version'),
+    el('div', { class: 'picker__row picker__row--tight' }, list.map(v => el('button', {
+      class: `pick pick--sm${chosen === v.version ? ' is-on' : ''}`, type: 'button',
+      disabled: running || !v.ready || null,
+      title: v.ready ? (v.default ? 'Vorgabe aus der .env' : '') : v.missing,
+      'aria-pressed': String(chosen === v.version),
+      onClick: () => { state.runOpts.etim_version = v.version; render(); },
+    }, el('span', { class: 'pick__title' }, v.label),
+       el('span', { class: 'pick__sub' },
+         v.ready ? (v.default ? 'geladen · Vorgabe' : 'geladen') : 'nicht geladen')))),
+    none
+      ? Note('Keine ETIM-Version ist geladen. Im Terminal: `make load-model` ' +
+             'bzw. `python -m etim load-model --etim 9.0` nach dem Entpacken des Release.', 'warn')
+      : (list.some(v => !v.ready)
+          ? el('p', { class: 'picker__note' },
+              'Ausgegraute Versionen fehlen auf der Platte. ' +
+              '`python -m etim versions` zeigt, was wo erwartet wird.')
+          : null),
+  );
+}
+
 function ViewCatalog() {
   const running = state.run?.state === 'running';
   const pick = state.runOpts.classifier;
@@ -518,6 +557,7 @@ function ViewCatalog() {
         state.busy ? el('p', { class: 'muted', style: 'margin-top:var(--s-5)' }, state.busy) : null,
       )),
       Card('Lauf für diesen Job', el('div', {},
+        EtimPicker(),
         ModelPicker(),
         el('div', { class: 'opts' },
           both ? opt('reuse_gemini', 'Gemini aus dem letzten Lauf übernehmen',
@@ -542,6 +582,9 @@ function ViewCatalog() {
       { label: 'Job', render: r => el('span', { class: 'code' }, r.job) },
       { label: 'Quelle', render: r => r.source_name || el('span', { class: 'faint' }, 'aus dem Terminal') },
       { label: 'Artikel', num: true, render: r => String(r.products || '—') },
+      { label: 'ETIM', render: r => r.etim
+          ? el('span', { class: 'faint', style: 'font-size:var(--fs-xs)' }, r.etim)
+          : el('span', { class: 'faint' }, '—') },
       { label: 'Modell', render: r => r.classifier
           ? el('span', { class: 'faint', style: 'font-size:var(--fs-xs)' }, r.classifier)
           : el('span', { class: 'faint' }, '—') },
@@ -845,7 +888,8 @@ function Topbar() {
             state.classifier.simulated ? Badge('simuliert', 'warn') : null)
         : el('span', { class: 'faint' }, 'noch nicht klassifiziert'),
       el('span', { class: 'faint' }, '·'),
-      el('span', {}, state.config.etim_version),
+      el('span', { class: state.classifier?.etim_label ? '' : 'faint' },
+        state.classifier?.etim_label || state.config.etim_version),
       el('span', { class: 'faint' }, '·'),
       el('span', {}, `Schwelle ${Math.round(state.config.review_threshold * 100)} %`),
       el('span', { class: 'faint' }, '·'),

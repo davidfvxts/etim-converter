@@ -1,9 +1,10 @@
-.PHONY: setup check env env-show test lint eval jev jev-check load-model studio compare reference
+.PHONY: setup check env env-show test lint eval jev jev-check versions load-model studio compare reference
 
 # Alles laeuft ueber das venv. Auf macOS gibt es kein "python", nur "python3" —
 # der direkte Pfad ins venv erspart sowohl das Aktivieren als auch den Unterschied.
 PY := .venv/bin/python
 JOB ?= demo
+ETIM ?=
 
 check:
 	@test -x $(PY) || { \
@@ -43,14 +44,17 @@ jev:                        ## Cloudflare-Worker deployen und .env einrichten
 jev-check: check            ## Jev-Zugang mit einem echten Mini-Aufruf pruefen
 	$(PY) -m etim jev-check
 
-load-model: check           ## ETIM-CSV nach SQLite + Klassen-Embeddings
-	$(PY) -m etim load-model data/etim
+versions: check             ## Welche ETIM-Versionen liegen vor?
+	$(PY) -m etim versions
+
+load-model: check           ## ETIM-CSV nach SQLite + Embeddings — make load-model ETIM=9.0
+	$(PY) -m etim load-model $(if $(ETIM),--etim $(ETIM))
 
 studio: check               ## Cockpit im Browser: Katalog einspielen, Lauf starten
 	$(PY) -m etim studio
 
-compare: check              ## Gemini gegen Jev — make compare JOB=strawa
-	$(PY) -m etim compare --job $(JOB)
+compare: check              ## Gemini gegen Jev — make compare JOB=strawa [ETIM=9.0]
+	$(PY) -m etim compare --job $(JOB) $(if $(ETIM),--etim $(ETIM))
 
 reference: check            ## Geruest fuer reference.json — make reference JOB=strawa
 	$(PY) -m etim reference out/$(JOB)

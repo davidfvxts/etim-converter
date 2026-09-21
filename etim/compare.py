@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable
 
-from . import classify, config, jev, llm
+from . import classify, config, jev, llm, versions
 from .model import ClassFeature, EtimModel
 from .schemas import (ClassCandidate, ClassDecision, Comparison, ComparisonItem,
                       FeatureAnswer, FeatureComparison, ModelAnswer, ModelMetrics,
@@ -78,7 +78,7 @@ def ask_gemini(model: EtimModel, p: Product, cands: list[ClassCandidate]) -> Mod
             "decide",
             classify.DECIDE_PROMPT.format(
                 name=p.name, description=p.description or "—", attributes=attrs,
-                version=config.ETIM_VERSION, candidates=cand_text),
+                version=versions.label(model.version), candidates=cand_text),
             ClassDecision, stats=stats,
         )
     except RuntimeError as e:
@@ -460,7 +460,7 @@ def run(out_dir: Path, model: EtimModel | None = None, *,
     comp = Comparison(
         job=out_dir.name,
         created=datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        etim_version=config.ETIM_VERSION,
+        etim_version=versions.label(model.version),
         gemini_model=config.GEMINI_MODEL,
         jev_model=jev_status.get("model", ""),
         jev_status=jev_status,

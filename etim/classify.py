@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import config, jev, llm
+from . import config, jev, llm, versions
 from .model import EtimModel
 from .schemas import ClassCandidate, ClassDecision, ClassifiedProduct, ModelAnswer, Product
 
@@ -43,7 +43,9 @@ Antworte als JSON nach Schema."""
 
 
 def _class_matrix(model: EtimModel) -> tuple[list[str], np.ndarray]:
-    cache = config.CACHE / "class_emb.npz"
+    # Je Version ein eigener Cache: Klassen-IDs sind zwischen ETIM-Versionen
+    # nicht stabil, ein geteilter Cache wuerde stillschweigend falsch zuordnen.
+    cache = versions.emb_path(model.version)
     ids = [r["id"] for r in model.classes()]
     if cache.exists():
         z = np.load(cache, allow_pickle=True)
@@ -79,7 +81,7 @@ def decide(model: EtimModel, p: Product, cands: list[ClassCandidate]) -> ClassDe
     attrs = "; ".join(f"{a.name}={a.value}" for a in p.attributes) or "—"
     return llm.generate_json(
         "decide",
-        DECIDE_PROMPT.format(name=p.name, description=p.description or "—", attributes=attrs, version=config.ETIM_VERSION, candidates=cand_text),
+        DECIDE_PROMPT.format(name=p.name, description=p.description or "—", attributes=attrs, version=versions.label(model.version), candidates=cand_text),
         ClassDecision,
     )
 
@@ -288,7 +290,7 @@ def run(out_dir: Path, model: EtimModel | None = None, *,
             result.append(ClassifiedProduct(
                 product=it.product, candidates=cands[:5], decision=d,
                 needs_review=_review_flag(model, d, cands),
-                model="gemini", simulated=a.simulated))
+                model="gemini", etim_version=model.version, simulated=a.simulated))
         return _write(out_dir, result, "gemini (Vergleich in compare.json)")
 
     data = json.loads((out_dir / "products.json").read_text())
@@ -309,7 +311,7 @@ def run(out_dir: Path, model: EtimModel | None = None, *,
             result.append(ClassifiedProduct(
                 product=p, candidates=c[:5], decision=d,
                 needs_review=_review_flag(model, d, c),
-                model=classifier, simulated=simulated))
+                model=classifier, etim_version=model.version, simulated=simulated))
         print(f"  klassifiziert {min(i + batch, len(products))}/{len(products)}")
     return _write(out_dir, result, classifier)
 
@@ -319,6 +321,7 @@ def _write(out_dir: Path, result: list[ClassifiedProduct], label: str) -> list[C
         json.dumps([r.model_dump() for r in result], ensure_ascii=False, indent=2))
     n_rev = sum(r.needs_review for r in result)
     n_none = sum(1 for r in result if not r.decision.class_id)
-    print(f"classify [{label}]: {len(result)} Artikel, {n_none} ohne Klasse, "
+    v = result[0].etim_version if result else ""
+    print(f"classify [{label}{f' · ETIM {v}' if v else ''}]: {len(result)} Artikel, {n_none} ohne Klasse, "
           f"{n_rev} zur Prüfung → {out_dir / 'classified.json'}")
     return result

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from lxml import etree
 
-from . import config
+from . import versions
 from .schemas import EnrichedProduct
 
 NS = "http://www.bmecat.org/bmecat/2005"
@@ -29,13 +29,18 @@ def build(products: list[EnrichedProduct], supplier_name: str, catalog_id: str, 
     root = etree.Element(f"{{{NS}}}BMECAT", nsmap={None: NS, "xsi": XSI}, version="2005")
     root.set(f"{{{XSI}}}schemaLocation", f"{NS} bmecat_2005.xsd")
 
+    # Die Version kommt aus dem Job, nicht aus der aktuellen .env: ein Katalog,
+    # der gegen ETIM 8 klassifiziert wurde, darf sich nicht als ETIM 10 ausgeben,
+    # nur weil inzwischen etwas anderes eingestellt ist.
+    etim_version = versions.label(next((p.etim_version for p in products if p.etim_version), None))
+
     header = _el(root, "HEADER")
     gen = _el(header, "GENERATOR_INFO", f"etim-pipeline {datetime.now():%Y-%m-%d}")
     cat = _el(header, "CATALOG")
     _el(cat, "LANGUAGE", "deu", default="true")
     _el(cat, "CATALOG_ID", catalog_id)
     _el(cat, "CATALOG_VERSION", "001.001")
-    _el(cat, "CATALOG_NAME", f"{supplier_name} – {config.ETIM_VERSION}")
+    _el(cat, "CATALOG_NAME", f"{supplier_name} – {etim_version}")
     _el(cat, "GENERATION_DATE", datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
     _el(cat, "TERRITORY", "DE")
     _el(cat, "CURRENCY", "EUR")
@@ -67,7 +72,7 @@ def build(products: list[EnrichedProduct], supplier_name: str, catalog_id: str, 
         _el(det, "MANUFACTURER_NAME", supplier_name)
 
         pf = _el(prod, "PRODUCT_FEATURES")
-        _el(pf, "REFERENCE_FEATURE_SYSTEM_NAME", config.ETIM_VERSION)
+        _el(pf, "REFERENCE_FEATURE_SYSTEM_NAME", etim_version)
         _el(pf, "REFERENCE_FEATURE_GROUP_ID", e.class_id)
         for fv in e.features:
             if fv.value is None:

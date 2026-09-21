@@ -101,12 +101,21 @@ def fill(model: EtimModel, cp: ClassifiedProduct) -> EnrichedProduct:
         feature_meta=meta,
         needs_review=cp.needs_review or bool(low) or thin,
         coverage=coverage,
+        model=cp.model,
+        etim_version=cp.etim_version or model.version,
     )
 
 
 def run(out_dir: Path, model: EtimModel | None = None) -> list[EnrichedProduct]:
-    model = model or EtimModel()
     items = [ClassifiedProduct.model_validate(x) for x in json.loads((out_dir / "classified.json").read_text())]
+    # Die Merkmalslisten muessen aus derselben ETIM-Version kommen wie die Klasse.
+    # Sonst befuellt man Merkmale, die es in dieser Klasse gar nicht gibt.
+    job_version = next((i.etim_version for i in items if i.etim_version), None)
+    model = model or EtimModel(version=job_version)
+    if job_version and model.version != job_version:
+        raise SystemExit(
+            f"Der Job wurde gegen ETIM {job_version} klassifiziert, geladen ist ETIM "
+            f"{model.version}. Merkmale aus einer anderen Version waeren falsch.")
     out = []
     for i, cp in enumerate(items, 1):
         out.append(fill(model, cp))

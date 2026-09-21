@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from . import config
+from . import versions
 
 TABLE_ALIASES = {
     "group": ["etimartgroup", "artgroup", "group", "groups"],
@@ -167,8 +167,8 @@ CREATE INDEX IF NOT EXISTS idx_syn ON synonyms(class_id);
 """
 
 
-def build_sqlite(folder: Path, db_path: Path | None = None) -> Path:
-    db_path = db_path or (config.CACHE / "etim.sqlite")
+def build_sqlite(folder: Path, db_path: Path | None = None, version: str | None = None) -> Path:
+    db_path = db_path or versions.db_path(version)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     tables = find_tables(folder)
     missing = [k for k in ("class", "feature", "value", "classfeature", "classfeaturevalue") if k not in tables]
@@ -248,10 +248,14 @@ class ClassFeature:
 
 
 class EtimModel:
-    def __init__(self, db_path: Path | None = None):
-        self.db_path = db_path or (config.CACHE / "etim.sqlite")
+    """Eine geladene ETIM-Version. Jede Version hat ihre eigene Datenbank."""
+
+    def __init__(self, db_path: Path | None = None, version: str | None = None):
+        self.version = versions.normalize(version)
+        self.db_path = db_path or versions.db_path(self.version)
         if not self.db_path.exists():
-            raise SystemExit(f"{self.db_path} fehlt — zuerst `python -m etim load-model data/etim`")
+            raise SystemExit(
+                f"{self.db_path} fehlt — zuerst `python -m etim load-model --etim {self.version}`")
         self.con = sqlite3.connect(self.db_path)
         self.con.row_factory = sqlite3.Row
 

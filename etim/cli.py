@@ -16,8 +16,12 @@ def main(argv=None):
     s.add_argument("folder", type=Path)
 
     s = sub.add_parser("load-model", help="ETIM-CSV nach SQLite laden und Klassen-Embeddings bauen")
-    s.add_argument("folder", type=Path)
+    s.add_argument("folder", type=Path, nargs="?", default=None,
+                   help="Ordner mit dem CSV-Release (Vorgabe: aus --etim abgeleitet)")
+    s.add_argument("--etim", default=None, help="ETIM-Version, z. B. 8.0, 9.0 oder 10.0")
     s.add_argument("--no-embed", action="store_true")
+
+    sub.add_parser("versions", help="Welche ETIM-Versionen liegen vor?")
 
     for name, help_ in [
         ("ingest", "Katalog -> products.json"),
@@ -40,6 +44,9 @@ def main(argv=None):
         if name in ("classify", "run"):
             s.add_argument("--model", choices=config.CLASSIFIERS, default=None,
                            help="Klassifizierungsmodell (Vorgabe: ETIM_CLASSIFIER, sonst gemini)")
+        if name in ("classify", "run", "compare"):
+            s.add_argument("--etim", default=None,
+                           help="ETIM-Version, z. B. 8.0, 9.0 oder 10.0 (Vorgabe: ETIM_VERSION)")
         if name == "compare":
             s.add_argument("--reuse-gemini", action="store_true",
                            help="Gemini aus classified.json übernehmen, nur Jev neu fragen")
@@ -70,17 +77,38 @@ def main(argv=None):
 
         inspect_folder(a.folder)
         return
+    if a.cmd == "versions":
+        from . import versions
+
+        print(f"{'Version':10} {'Daten':6} {'DB':4} {'Embeddings':11} Hinweis")
+        for st in versions.available():
+            ja = lambda b: " ja  " if b else " —   "  # noqa: E731
+            mark = " (Vorgabe)" if st["default"] else ""
+            print(f"{st['label']:10}{ja(st['has_data'])}{ja(st['has_db'])[:4]}"
+                  f"{ja(st['has_embeddings']):11} {st['missing'] or 'einsatzbereit' + mark}")
+        return
     if a.cmd == "load-model":
+        from . import versions
         from .model import EtimModel, build_sqlite
 
-        build_sqlite(a.folder)
-        m = EtimModel()
+        version = versions.normalize(a.etim)
+        if version not in versions.SUPPORTED:
+            raise SystemExit(f"ETIM {version} wird nicht unterstuetzt — "
+                             f"moeglich: {', '.join(versions.SUPPORTED)}")
+        folder = a.folder or versions.data_dir(version)
+        if not folder:
+            raise SystemExit(
+                f"Kein CSV-Release fuer ETIM {version} gefunden. Erwartet in "
+                f"{config.DATA / 'etim' / version}/ — oder Ordner als Argument angeben.")
+        print(f"ETIM {version} aus {folder}")
+        build_sqlite(Path(folder), versions.db_path(version), version)
+        m = EtimModel(versions.db_path(version), version)
         print("Zähler:", m.count())
         if not a.no_embed:
             from .classify import _class_matrix
 
             ids, emb = _class_matrix(m)
-            print(f"Embeddings: {emb.shape}")
+            print(f"Embeddings: {emb.shape} → {versions.emb_path(version)}")
         return
     if a.cmd == "ui":
         from .ui import run as run_ui
@@ -153,11 +181,18 @@ def main(argv=None):
     if a.cmd in ("classify", "run"):
         from . import classify
 
-        classify.run(out_dir, classifier=a.model)
+        from . import versions
+        from .model import EtimModel
+
+        classify.run(out_dir, EtimModel(version=versions.require(a.etim)), classifier=a.model)
     if a.cmd == "compare":
         from . import compare
 
-        compare.run(out_dir, reuse_gemini=a.reuse_gemini, with_features=a.features)
+        from . import versions
+        from .model import EtimModel
+
+        compare.run(out_dir, EtimModel(version=versions.require(a.etim)),
+                    reuse_gemini=a.reuse_gemini, with_features=a.features)
         return
     if a.cmd in ("features", "run"):
         from . import features

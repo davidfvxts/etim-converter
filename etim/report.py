@@ -10,7 +10,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from . import config
+from . import config, versions
 from .schemas import EnrichedProduct
 
 
@@ -41,7 +41,8 @@ def run(out_dir: Path, supplier_name: str = "") -> Path:
     lines = [
         f"# Produktdaten-Report{': ' + supplier_name if supplier_name else ''}",
         "",
-        f"Job `{out_dir.name}` · {config.ETIM_VERSION} · Schwelle für Freigabe {config.REVIEW_THRESHOLD:.0%}",
+        f"Job `{out_dir.name}` · {versions.label(next((e.etim_version for e in items if e.etim_version), None))}"
+        f" · Schwelle für Freigabe {config.REVIEW_THRESHOLD:.0%}",
         "",
         "## Zusammenfassung",
         "",

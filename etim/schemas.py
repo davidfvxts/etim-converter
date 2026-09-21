@@ -45,6 +45,7 @@ class ClassifiedProduct(BaseModel):
     decision: ClassDecision
     needs_review: bool = False
     model: str = Field(default="gemini", description="Welches Modell die Klasse gewählt hat: 'gemini' oder 'jev'")
+    etim_version: str = Field(default="", description="Gegen welche ETIM-Version klassifiziert wurde, z. B. '10.0'")
     simulated: bool = Field(default=False, description="Antwort aus dem Trockenlauf, nicht gemessen")
 
 
@@ -69,6 +70,8 @@ class EnrichedProduct(BaseModel):
     features: list[FeatureValue]
     feature_meta: dict[str, dict] = Field(default_factory=dict, description="feature_id -> {desc,type,unit_id,unit_desc,n_values}")
     coverage: float = Field(default=0.0, description="Anteil der befuellten Merkmale (0..1)")
+    model: str = Field(default="gemini", description="Modell der Klassenentscheidung")
+    etim_version: str = Field(default="", description="ETIM-Version, aus der Merkmale und Wertelisten stammen")
     needs_review: bool = False
 
 
