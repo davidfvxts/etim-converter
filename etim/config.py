@@ -33,6 +33,12 @@ CF_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID", "")
 CF_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN", "")
 JEV_MODEL = os.getenv("ETIM_JEV_MODEL", "typesafe/jev")
 JEV_TIMEOUT = int(os.getenv("ETIM_JEV_TIMEOUT", "90"))
+# Welches Modell die ETIM-Klasse waehlt: "gemini", "jev" oder "both".
+# "both" laesst beide laufen und schreibt zusaetzlich den Vergleich (compare.json);
+# fuer den Export zaehlt dann Gemini — der Vergleich misst, er liefert nicht.
+CLASSIFIER = os.getenv("ETIM_CLASSIFIER", "gemini")
+CLASSIFIERS = ("gemini", "jev", "both")
+
 # Kandidatenfeld fuer Jev. Jev erlaubt 255 Optionen je Choice; eine Option bleibt
 # fuer "keine passt" reserviert.
 JEV_TOP_K = int(os.getenv("ETIM_JEV_TOP_K", "254"))

@@ -15,7 +15,7 @@ Pipeline (jede Stufe ist ein eigener CLI-Befehl, alle Zwischenstände sind JSON 
 
 ```
 ingest   PDF/XLSX  -> products.json          (Gemini liest Seiten, extrahiert Artikel + Rohattribute)
-classify products  -> classified.json        (Embedding-Retrieval Top-20 -> LLM wählt Klasse -> Konfidenz)
+classify products  -> classified.json        (Retrieval -> Gemini ODER Jev ODER beide wählen die Klasse)
 features classified -> enriched.json         (LLM füllt ETIM-Merkmale aus Wertelisten, mit Quellzitat)
 export   enriched  -> catalog.bmecat.xml     (BMEcat 2005 + ETIM)
 validate xml       -> validation.json        (XSD wenn vorhanden, sonst Strukturregeln)
@@ -112,7 +112,8 @@ make jev                        # Worker deployen, .env einrichten
 make jev-check                  # echter Mini-Aufruf: antwortet Jev?
 make load-model                 # ETIM-CSV -> SQLite + Embeddings
 make studio                     # Cockpit im Browser
-make compare JOB=strawa         # Gemini gegen Jev
+make compare JOB=strawa         # Gemini gegen Jev (nur Messung)
+python -m etim classify --job strawa --model jev   # Jev als Klassifizierer der Pipeline
 make reference JOB=strawa       # Gerüst für reference.json
 make test                       # pytest mit DRY_RUN (läuft ohne API-Key)
 python -m etim inspect data/etim           # zeigt, welche CSV-Dateien/Spalten da sind
@@ -143,6 +144,27 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
       `POST /ai/run` mit `{"model":"typesafe/jev","input":{state,questions}}`, Antwort unter
       `result`; Choice max. 255 Optionen; Noul liefert **nur** `noul` (keine `confidence`);
       Score 2–10 Stufen; Kontext 32k; Output kostenlos.
+- [x] **Jev ist jetzt ein echtes Klassifizierungsmodell, nicht nur Vergleichsbeiwerk**
+      (21.9.2026, auf Nachfrage von David). Vorher lief Jev ausschliesslich in `compare.py`;
+      `classify.run` war Gemini-only, Jev kam also nie in `classified.json` und damit nie in
+      Export oder Merkmale an. Jetzt: `ETIM_CLASSIFIER` bzw. `--model gemini|jev|both`,
+      im Cockpit unter **Katalog** als drei Karten je Lauf umschaltbar.
+      **Strukturell aufgeraeumt:** die Jev-Klassenwahl (`ask_jev`, `class_criteria`,
+      `product_state`, die Optionsbeschreibungen) ist von `compare.py` nach `classify.py`
+      gewandert — sie ist Klassifizierung, nicht Vergleich, und compare haengt ohnehin schon
+      an classify, die Abhaengigkeit bleibt also in einer Richtung. compare reicht die Namen
+      weiter, damit der Vergleich und seine Tests unveraendert damit arbeiten.
+      **Entscheidung bei `both`:** `classified.json` und damit der Export kommen weiter von
+      Gemini, der Vergleich landet nur in `compare.json`. Ein Messlauf soll nicht unbemerkt
+      die Lieferdatei aendern; faellt die Entscheidung fuer Jev, wird mit `--model jev` neu
+      klassifiziert. Steht auch so in der Oberflaeche.
+      `ClassifiedProduct` traegt jetzt `model` und `simulated`; die Oberflaeche zeigt beides
+      in der Kopfzeile, auf der Uebersicht und in der Jobliste — **ohne Zugang oder im
+      Trockenlauf klar als simuliert markiert**, wie bisher.
+      Jevs `reasoning` ist kein Modelltext (den gibt es nicht), sondern ein aus der
+      Wahrscheinlichkeitsverteilung gebauter Satz; erfundene EC-Codes kann er nicht
+      enthalten, weil nur Optionen aus dem Kandidatenfeld vorkommen.
+      Tests: **48 statt 45**, inklusive Jev-Ausfall waehrend eines echten Klassifizierungslaufs.
 - [ ] **NICHT GEMESSEN: der echte Lauf fehlt — diese Umgebung kann ihn nicht fahren.** Der Code
       ist vollständig und getestet, aber jede Zahl im Dashboard stammt bisher aus dem Trockenlauf
       und ist als `simuliert` gekennzeichnet. Vier Gründe, alle Umgebung, keiner Code:

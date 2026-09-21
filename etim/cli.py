@@ -37,6 +37,9 @@ def main(argv=None):
         s.add_argument("--supplier", default="Hersteller", help="Herstellername für BMEcat/Report")
         s.add_argument("--gln", default=None)
         s.add_argument("--include-review", action="store_true", help="auch unsichere Artikel exportieren")
+        if name in ("classify", "run"):
+            s.add_argument("--model", choices=config.CLASSIFIERS, default=None,
+                           help="Klassifizierungsmodell (Vorgabe: ETIM_CLASSIFIER, sonst gemini)")
         if name == "compare":
             s.add_argument("--reuse-gemini", action="store_true",
                            help="Gemini aus classified.json übernehmen, nur Jev neu fragen")
@@ -150,7 +153,7 @@ def main(argv=None):
     if a.cmd in ("classify", "run"):
         from . import classify
 
-        classify.run(out_dir)
+        classify.run(out_dir, classifier=a.model)
     if a.cmd == "compare":
         from . import compare
 

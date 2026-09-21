@@ -24,12 +24,16 @@ from .schemas import (ClassCandidate, ClassDecision, Comparison, ComparisonItem,
                       Product, ReasoningCode)
 
 EC_RE = re.compile(r"\bEC\d{6}\b")
-NONE_OPTION = "none"
 
-# Aus dem Klassentext ablesbare Zubehoerklassen. ETIM fuehrt Zubehoer und
-# Ersatzteile in eigenen Klassen — genau an dieser Grenze irrt die Zuordnung am
-# haeufigsten, darum bekommt Jev sie als "not_for" ausdruecklich mitgegeben.
-ACCESSORY_RE = re.compile(r"^\s*(accessor|spare part|mounting material|assembly material)", re.I)
+# Die Jev-Klassenzuordnung steht in classify.py — sie ist Klassifizierung, nicht
+# Vergleich, und classify.run benutzt sie auch ohne dieses Modul. Hier nur
+# weitergereicht, damit der Vergleich mit denselben Bausteinen arbeitet.
+from .classify import (ACCESSORY_INSTRUCTIONS, CLASS_INSTRUCTIONS,  # noqa: E402
+                       NONE_OPTION, _tokens, ask_jev, class_criteria, product_state)
+
+# Bewusst weitergereicht: der Vergleich und seine Tests sprechen diese Bausteine
+# ueber compare an, auch wenn sie inzwischen in classify stehen.
+REEXPORTED = (ACCESSORY_INSTRUCTIONS, CLASS_INSTRUCTIONS, class_criteria)
 
 
 # ------------------------------------------------------------------ Hilfsteile
@@ -60,147 +64,6 @@ def reasoning_codes(model: EtimModel, text: str) -> list[ReasoningCode]:
         desc = model.class_desc(code)
         out.append(ReasoningCode(code=code, known=bool(desc), desc=desc))
     return out
-
-
-def _tokens(obj) -> int:
-    """Grobe Tokenschaetzung. Reicht, um unter Jevs 32k-Fenster zu bleiben."""
-    return len(json.dumps(obj, ensure_ascii=False)) // 4
-
-
-def _class_option(model: EtimModel, class_id: str, level: int) -> dict | str:
-    """Strukturierte Optionsbeschreibung einer ETIM-Klasse.
-
-    Jev liest JSON in den Optionsbeschreibungen. Statt den Klassentext zu einem
-    Satz zu verkleben, bekommt jede Option benannte Felder — und vor allem ein
-    `not_for`, das die Grenze Hauptprodukt/Zubehoer ausspricht, statt sie zu raten.
-    `level` steuert, wie ausfuehrlich es wird (Kontextbudget).
-    """
-    desc = model.class_desc(class_id)
-    row = model.con.execute(
-        "SELECT g.description AS group_desc FROM classes c LEFT JOIN groups g ON g.id=c.group_id WHERE c.id=?",
-        (class_id,),
-    ).fetchone()
-    group = row["group_desc"] if row and row["group_desc"] else ""
-    is_acc = bool(ACCESSORY_RE.match(desc))
-
-    if level >= 3:  # knappste Form: nur noch der Klassentext
-        return desc
-
-    opt: dict = {"what": desc}
-    if group and level <= 1:
-        opt["group"] = group
-    if is_acc:
-        opt["not_for"] = "Not the complete product itself — only parts and accessories sold for it."
-    elif level <= 2:
-        opt["not_for"] = "Not accessories, spare parts or mounting material sold for this product — ETIM has separate accessory classes for those."
-
-    syn = [r[0] for r in model.con.execute("SELECT synonym FROM synonyms WHERE class_id=?", (class_id,))]
-    cap = {0: 10, 1: 6, 2: 3}.get(level, 0)
-    if syn and cap:
-        opt["examples"] = syn[:cap]
-    if level == 0:
-        feats = [r[0] for r in model.con.execute(
-            "SELECT f.description FROM class_features cf JOIN features f ON f.id=cf.feature_id "
-            "WHERE cf.class_id=? ORDER BY cf.sort LIMIT 6", (class_id,))]
-        if feats:
-            opt["has_features"] = feats
-    return opt
-
-
-def class_criteria(model: EtimModel, cands: list[ClassCandidate], budget: int) -> tuple[dict, str, int]:
-    """Kandidatenfeld als Choice-Optionen, passend zu Jevs Kontextfenster.
-
-    Rueckgabe: (criteria, Kuerzungsstufe im Klartext, Zahl der Kandidaten).
-    Lieber ausfuehrliche Beschreibungen fuer weniger Klassen als abgeschnittene
-    fuer alle — erst wenn auch die knappste Form nicht passt, faellt das Feld.
-    """
-    labels = {0: "voll", 1: "ohne Merkmalslisten", 2: "knapp", 3: "nur Klassentext"}
-    used = list(cands)
-    while used:
-        for level in (0, 1, 2, 3):
-            crit = {c.class_id: _class_option(model, c.class_id, level) for c in used}
-            crit[NONE_OPTION] = {
-                "what": "No class in this list fits the article.",
-                "use_when": "The article is a product type that none of the listed classes describes.",
-            }
-            if _tokens(crit) <= budget:
-                note = labels[level]
-                if len(used) < len(cands):
-                    note += f", Feld auf {len(used)} von {len(cands)} gekuerzt"
-                return crit, note, len(used)
-        used = used[: int(len(used) * 0.8)]
-    raise ValueError("Kandidatenfeld passt in keiner Form in das Jev-Kontextfenster")
-
-
-def product_state(p: Product) -> dict:
-    """Artikel als strukturierter Zustand. Jev ist auf Struktur trainiert."""
-    return {
-        "article_name": p.name,
-        "description": p.description or None,
-        "catalogue_attributes": {a.name: a.value for a in p.attributes[:24]} or None,
-        "catalogue_line": (p.source_quote or None),
-        "language_note": "The article text is German; the class descriptions are English.",
-    }
-
-
-# ------------------------------------------------------------ Klassenzuordnung
-
-CLASS_INSTRUCTIONS = {
-    "question": "Which ETIM class describes this catalogue article?",
-    "rules": [
-        "Pick the most specific class whose product type matches the article itself.",
-        "ETIM classes are product types, not application areas.",
-        "If the article is an accessory or a spare part, pick the accessory class, not the main product class.",
-        f"Pick '{NONE_OPTION}' only if no listed class describes this product type.",
-    ],
-}
-
-ACCESSORY_INSTRUCTIONS = {
-    "question": "Is this catalogue article an accessory, spare part or mounting material sold for another product?",
-    "note": "A complete, independently usable product is not an accessory, even when it is built into a larger system.",
-}
-
-
-def ask_jev(model: EtimModel, p: Product, cands: list[ClassCandidate]) -> ModelAnswer:
-    """Klasse und Zubehoerfrage in einem einzigen Jev-Aufruf.
-
-    Beide Fragen laufen gegen denselben Zustand und werden parallel ausgewertet;
-    die zweite kostet ein paar Token und praktisch keine Zeit. Sie ist bewusst
-    unabhaengig gestellt: Jev nutzt die Klassenantwort nicht als Kontext, also
-    ist sie ein echtes Gegensignal und keine Nacherzaehlung.
-    """
-    ranks = {c.class_id: i + 1 for i, c in enumerate(cands)}
-    answer = ModelAnswer(model="jev", candidates_seen=len(cands))
-    try:
-        crit, trim, n_used = class_criteria(model, cands, budget=24_000)
-        answer.candidates_seen = n_used
-        answer.trim_level = trim
-        res = jev.ask("classify", product_state(p), {
-            "etim_class": jev.choice(CLASS_INSTRUCTIONS, crit),
-            "is_accessory": jev.noul(
-                ACCESSORY_INSTRUCTIONS,
-                "The article is an accessory, spare part or mounting material for another product.",
-                "The article is a complete product in its own right.",
-            ),
-        })
-    except (jev.JevError, ValueError) as e:
-        answer.error = str(e)
-        return answer
-
-    choice, conf, probs = res.choice_of("etim_class")
-    answer.class_id = None if choice in (None, NONE_OPTION) else choice
-    answer.confidence = conf
-    answer.is_accessory = res.noul_of("is_accessory")
-    answer.simulated = res.simulated
-    answer.latency_ms = res.latency_ms
-    answer.input_tokens = res.usage.get("input_tokens", 0)
-    answer.output_tokens = res.usage.get("output_tokens", 0)
-    answer.cost_usd = res.cost_usd
-    top = sorted(probs.items(), key=lambda kv: -kv[1])[:6]
-    answer.probabilities = {k: round(float(v), 4) for k, v in top if v > 0}
-    answer.runner_up = next((k for k, _ in top if k != choice), None)
-    answer.rank_of_choice = ranks.get(answer.class_id or "")
-    return answer
 
 
 def ask_gemini(model: EtimModel, p: Product, cands: list[ClassCandidate]) -> ModelAnswer:

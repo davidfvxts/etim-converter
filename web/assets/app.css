@@ -201,3 +201,38 @@
 }
 .ans__noul, .ans__trim { color: var(--ink-faint); font-size: var(--fs-2xs); }
 .ans__err { color: var(--crit); }
+
+/* === Modellwahl für den nächsten Lauf =================================== */
+.picker { margin-bottom: var(--s-6); }
+.picker__row { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-4); margin-top: var(--s-4); }
+@media (max-width: 900px) { .picker__row { grid-template-columns: 1fr; } }
+.pick {
+  display: flex; flex-direction: column; gap: var(--s-2);
+  padding: var(--s-5); text-align: left; cursor: pointer;
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--surface); color: var(--ink);
+  transition: border-color var(--motion-fast), background var(--motion-fast);
+}
+.pick:hover:not(:disabled) { border-color: var(--accent-line); background: var(--accent-soft); }
+.pick.is-on { border-color: var(--accent); background: var(--accent-soft); }
+.pick:disabled { opacity: .45; cursor: not-allowed; }
+.pick__title { font-size: var(--fs-md); font-weight: var(--fw-semi); }
+.pick.is-on .pick__title { color: var(--accent); }
+.pick__sub { font-size: var(--fs-2xs); line-height: var(--lh-body); color: var(--ink-muted); }
+.picker__note {
+  margin: var(--s-4) 0 0; font-size: var(--fs-2xs);
+  line-height: var(--lh-body); color: var(--ink-faint);
+}
+
+/* === Welches Modell hat diesen Job klassifiziert? ======================= */
+.runinfo {
+  display: flex; align-items: center; gap: var(--s-5);
+  padding: var(--s-5) var(--s-6);
+  border: 1px solid var(--line); border-left: 2px solid var(--accent);
+  border-radius: var(--r-md); background: var(--surface);
+}
+.runinfo__icon { width: 18px; height: 18px; color: var(--accent); flex: none; }
+.runinfo__title { font-size: var(--fs-md); color: var(--ink); }
+.runinfo__sub { margin-top: 2px; font-size: var(--fs-xs); color: var(--ink-muted); }
+.runinfo .btn { margin-left: auto; }
+.topbar__model { display: inline-flex; align-items: center; gap: var(--s-3); }

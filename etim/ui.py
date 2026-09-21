@@ -80,10 +80,28 @@ def _value_labels(enriched: list[dict], extra_classes: list[str] = ()) -> dict[s
         return {}
 
 
+def _classifier_of(classified: list) -> dict:
+    """Welches Modell die vorliegende Klassifizierung erzeugt hat.
+
+    Steht an jedem Artikel; hier zusammengefasst, damit die Oberflaeche es oben
+    anzeigen kann, ohne die ganze Liste durchzusehen.
+    """
+    if not classified:
+        return {}
+    models = {r.get("model", "gemini") for r in classified}
+    return {
+        "models": sorted(models),
+        "label": " und ".join(studio.LABELS.get(m, m) for m in sorted(models)),
+        "mixed": len(models) > 1,
+        "simulated": any(r.get("simulated") for r in classified),
+    }
+
+
 def payload(job_dir: Path) -> dict:
     products = _load(job_dir / "products.json", {})
     enriched = _load(job_dir / "enriched.json", [])
     compare = _load(job_dir / "compare.json", None)
+    classified = _load(job_dir / "classified.json", [])
     files = []
     for name, desc in FILE_DESC.items():
         p = job_dir / name
@@ -99,9 +117,12 @@ def payload(job_dir: Path) -> dict:
             "top_k": config.TOP_K_CLASSES,
             "jev_top_k": config.JEV_TOP_K,
             "max_upload_mb": config.MAX_UPLOAD_MB,
+            "classifier": config.CLASSIFIER,
+            "classifiers": list(config.CLASSIFIERS),
         },
         "products": products.get("products", []) if isinstance(products, dict) else products,
-        "classified": _load(job_dir / "classified.json", []),
+        "classified": classified,
+        "classifier": _classifier_of(classified),
         "enriched": enriched,
         "compare": compare,
         "validation": _load(job_dir / "validation.json", None),
@@ -174,6 +195,8 @@ class Handler(SimpleHTTPRequestHandler):
                     "jev": jev.status(),
                     "max_upload_mb": config.MAX_UPLOAD_MB,
                     "allowed": sorted(studio.ALLOWED),
+                    "classifier": config.CLASSIFIER,
+                    "classifiers": list(config.CLASSIFIERS),
                 })
             if route == "/api/job":
                 job_dir = self._job_dir(q.get("job", ""))
@@ -257,6 +280,7 @@ class Handler(SimpleHTTPRequestHandler):
         if isinstance(data.get("pages"), list) and len(data["pages"]) == 2:
             pages = (int(data["pages"][0]), int(data["pages"][1]))
         state = studio.start(job_dir, kind=kind,
+                             classifier=str(data.get("classifier") or "") or None,
                              reuse_gemini=bool(data.get("reuse_gemini")),
                              with_features=bool(data.get("with_features")),
                              pages=pages)

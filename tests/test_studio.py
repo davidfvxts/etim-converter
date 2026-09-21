@@ -157,10 +157,12 @@ def test_http_upload_and_run(server, model):
     assert status == 200 and {j["job"] for j in jobs["jobs"]} == {"katalog-mini", "katalog-mini-2"}
     assert jobs["jev"]["simulated"] is True
 
-    # kompletter Lauf: einlesen, Retrieval, beide Modelle
-    status, run = call(f"{base}/api/run", json.dumps({"job": "katalog-mini", "kind": "full"}).encode(),
+    # kompletter Lauf mit beiden Modellen: einlesen, Retrieval, Gemini, Jev
+    status, run = call(f"{base}/api/run",
+                       json.dumps({"job": "katalog-mini", "kind": "full", "classifier": "both"}).encode(),
                        {"Content-Type": "application/json"})
     assert status == 202 and run["state"] == "running"
+    assert run["classifier"] == "both" and run["classifier_label"] == "Gemini und Jev"
     assert [s["key"] for s in run["stages"] if s["active"]] == ["ingest", "retrieval", "gemini", "jev"]
 
     for _ in range(200):

@@ -407,3 +407,9 @@
   display: block; margin-top: 2px;
   font-size: var(--fs-2xs); font-weight: var(--fw-normal); color: var(--ink-faint);
 }
+.run__model {
+  padding: 1px var(--s-3); border-radius: var(--r-pill);
+  border: 1px solid var(--line); background: var(--surface);
+  font-size: var(--fs-2xs); font-weight: var(--fw-medium); color: var(--ink-muted);
+  white-space: nowrap;
+}

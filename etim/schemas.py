@@ -44,6 +44,8 @@ class ClassifiedProduct(BaseModel):
     candidates: list[ClassCandidate]
     decision: ClassDecision
     needs_review: bool = False
+    model: str = Field(default="gemini", description="Welches Modell die Klasse gewählt hat: 'gemini' oder 'jev'")
+    simulated: bool = Field(default=False, description="Antwort aus dem Trockenlauf, nicht gemessen")
 
 
 class FeatureValue(BaseModel):

@@ -70,6 +70,28 @@ kein Build, keine npm-Abhängigkeit, läuft offline. `web/assets/tokens.css` ist
 für Farb-, Typo- und Rasterwerte. `python scripts/build_preview.py` erzeugt daraus eine einzelne
 HTML-Datei zum Weitergeben (zeigt Beispieldaten, keinen Job).
 
+## Klassifizierungsmodell wählen
+
+Die ETIM-Klasse kann Gemini wählen, Jev, oder beide zum Vergleich:
+
+```bash
+python -m etim classify --job demo --model gemini   # Top-20 Kandidaten, mit Quellzitaten
+python -m etim classify --job demo --model jev      # bis zu 254 Kandidaten, keine erfundenen Codes
+python -m etim classify --job demo --model both     # beide, plus compare.json
+```
+
+Im Cockpit steht die Wahl unter **Katalog** als drei Karten und gilt für den nächsten Lauf —
+auch für einen frisch hochgeladenen Katalog. Welches Modell einen Job klassifiziert hat, steht
+in der Kopfzeile, auf der Übersicht und in der Jobliste; `classified.json` trägt es an jedem
+Artikel mit (`model`, `simulated`).
+
+Die Vorauswahl kommt aus `ETIM_CLASSIFIER` (Vorgabe `gemini`). Wer überwiegend vergleicht,
+setzt dort `both`.
+
+**Bei `both` zählt für den Export weiterhin Gemini.** Ein Vergleichslauf soll messen, nicht
+unbemerkt die Lieferdatei ändern — fällt die Entscheidung für Jev, wird mit `--model jev`
+neu klassifiziert.
+
 ## Modellvergleich: Gemini gegen Jev
 
 ```bash

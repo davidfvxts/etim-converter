@@ -15,7 +15,7 @@ const state = {
   compare: null, jev: null, run: null, meta: {},
   jobs: [], jobsLoaded: false, serverUp: false, busy: '',
   cmpSelected: null, cmpFilter: 'all', cmpQuery: '',
-  runOpts: { reuse_gemini: false, with_features: false },
+  runOpts: { reuse_gemini: false, with_features: false, classifier: 'gemini' },
 };
 
 /* ---------------------------------------------------------------- Ableitungen */
@@ -125,6 +125,20 @@ function ViewOverview() {
 
   return el('div', { class: 'view scroll-y' },
     state.demo ? Note('Beispieldaten. Es ist kein Job geladen — so sieht das Cockpit mit echten Katalogdaten aus.', 'accent') : null,
+    state.classifier?.label ? el('div', { class: 'runinfo' },
+      icon(state.classifier.models?.includes('jev') ? 'scale' : 'spark', 'runinfo__icon'),
+      el('div', {},
+        el('div', { class: 'runinfo__title' },
+          'Klassifiziert mit ', el('strong', {}, state.classifier.label)),
+        el('div', { class: 'runinfo__sub' },
+          state.classifier.simulated
+            ? 'Trockenlauf — diese Antworten sind simuliert, nicht gemessen.'
+            : (state.compare
+                ? 'Ein Modellvergleich liegt vor — siehe Reiter „Vergleich“.'
+                : 'Unter „Katalog“ lässt sich ein Lauf mit einem anderen Modell starten.'))),
+      state.compare ? Button('Zum Vergleich', { size: 'sm', iconName: 'scale',
+        onClick: () => go('compare') }) : null,
+    ) : null,
     StatRow([
       { label: 'Artikel', value: n, sub: `${withClass.length} mit ETIM-Klasse` },
       { label: 'Freigabefähig', value: n - review.length, tone: 'ok',
@@ -346,6 +360,7 @@ async function loadJobs() {
     const d = await api('api/jobs');
     state.jobs = d.jobs || [];
     state.jev = d.jev || state.jev;
+    if (d.classifier && !state.classifierTouched) state.runOpts.classifier = d.classifier;
     state.serverUp = true;
   } catch {
     // Datei direkt im Browser geöffnet (geteilte Vorschau): kein Server, keine Jobs.
@@ -429,7 +444,7 @@ function pollRun(job) {
       await loadJob(job);
       await loadJobs();
       state.run = r;
-      if (r.state === 'done' && state.compare) state.view = 'compare';
+      if (r.state === 'done') state.view = state.compare && r.classifier === 'both' ? 'compare' : 'overview';
       render();
     } catch (e) {
       state.run = { state: 'error', error: e.message, message: 'Verbindung zum Lauf verloren', stages: [], log: [] };
@@ -439,8 +454,42 @@ function pollRun(job) {
   pollTimer = setTimeout(step, 800);
 }
 
+const MODEL_LABEL = { gemini: 'Gemini', jev: 'Jev', both: 'Gemini und Jev' };
+
+/** Womit soll klassifiziert werden? Die Wahl gilt für den nächsten Lauf. */
+function ModelPicker() {
+  const pick = state.runOpts.classifier;
+  const running = state.run?.state === 'running';
+  const jevOff = state.jev && !state.jev.ready;
+  const cards = [
+    { value: 'gemini', title: 'Gemini',
+      sub: `sieht die Top-${state.config.top_k || 20} Kandidaten · liest Text, liefert Belege` },
+    { value: 'jev', title: 'Jev',
+      sub: `sieht bis zu ${state.config.jev_top_k || 254} Kandidaten · kann keine Codes erfinden` },
+    { value: 'both', title: 'Beide',
+      sub: 'derselbe Artikel an beide Modelle · Vergleichszahlen im Reiter „Vergleich“' },
+  ];
+  return el('div', { class: 'picker' },
+    el('div', { class: 'label' }, 'Klassifizieren mit'),
+    el('div', { class: 'picker__row' }, cards.map(c => el('button', {
+      class: `pick${pick === c.value ? ' is-on' : ''}`, type: 'button',
+      disabled: running || (jevOff && c.value !== 'gemini') || null,
+      title: jevOff && c.value !== 'gemini' ? `Jev ist nicht eingerichtet: ${state.jev.reason}` : '',
+      'aria-pressed': String(pick === c.value),
+      onClick: () => { state.runOpts.classifier = c.value; state.classifierTouched = true; render(); },
+    }, el('span', { class: 'pick__title' }, c.title),
+       el('span', { class: 'pick__sub' }, c.sub)))),
+    pick === 'both'
+      ? el('p', { class: 'picker__note' },
+          'Für den Export zählt weiterhin Gemini — ein Vergleichslauf misst, er ändert die Lieferdatei nicht.')
+      : null,
+  );
+}
+
 function ViewCatalog() {
   const running = state.run?.state === 'running';
+  const pick = state.runOpts.classifier;
+  const both = pick === 'both';
   const j = state.jev;
   const accept = '.pdf,.xlsx,.csv,application/pdf,text/csv';
 
@@ -461,28 +510,28 @@ function ViewCatalog() {
           accept,
           disabled: state.demo || running,
           hint: `PDF, XLSX oder CSV · höchstens ${state.config.max_upload_mb || 40} MB. ` +
-                'Daraus entsteht ein neuer Job; danach laufen Extraktion und Vergleich von allein.',
+                'Daraus entsteht ein neuer Job; danach laufen Extraktion und ' +
+                (both ? 'der Vergleich' : `die Klassifizierung mit ${MODEL_LABEL[pick]}`) +
+                ' von allein.',
           onFile: uploadCatalog,
         }),
         state.busy ? el('p', { class: 'muted', style: 'margin-top:var(--s-5)' }, state.busy) : null,
       )),
-      Card('Vergleich für diesen Job', el('div', {},
-        el('p', { class: 'muted', style: 'font-size:var(--fs-sm);line-height:var(--lh-body)' },
-          `Gemini entscheidet aus den Top-${state.config.top_k || 20} Kandidaten, ` +
-          `Jev aus bis zu ${state.config.jev_top_k || 254}. Beide bekommen denselben Artikel ` +
-          'und dieselbe Retrieval-Liste.'),
+      Card('Lauf für diesen Job', el('div', {},
+        ModelPicker(),
         el('div', { class: 'opts' },
-          opt('reuse_gemini', 'Gemini aus dem letzten Lauf übernehmen',
-              'Spart die Gemini-Kosten — dann sind Laufzeit und Kosten nur für Jev gemessen.'),
-          opt('with_features', 'ETIM-Merkmale mitvergleichen',
+          both ? opt('reuse_gemini', 'Gemini aus dem letzten Lauf übernehmen',
+                     'Spart die Gemini-Kosten — dann sind Laufzeit und Kosten nur für Jev gemessen.') : null,
+          opt('with_features', 'ETIM-Merkmale mitbefüllen',
               'Logische Merkmale als Noul, Wertelisten als Choice. Zahlen bleiben bei Gemini.')),
         el('div', { class: 'row-actions' },
-          Button('Vergleich starten', {
-            variant: 'primary', iconName: 'scale', disabled: running || !state.job || state.demo,
+          Button(both ? 'Vergleich starten' : `Klassifizieren mit ${MODEL_LABEL[pick]}`, {
+            variant: 'primary', iconName: both ? 'scale' : 'spark',
+            disabled: running || !state.job || state.demo,
             onClick: () => startRun('compare'),
           }),
-          Button('Katalog neu einlesen und vergleichen', {
-            iconName: 'spark', disabled: running || !state.meta?.source || state.demo,
+          Button('Katalog neu einlesen', {
+            iconName: 'upload', disabled: running || !state.meta?.source || state.demo,
             title: state.meta?.source ? '' : 'Nur für Jobs, deren Katalog hier hochgeladen wurde',
             onClick: () => startRun('full'),
           })),
@@ -493,6 +542,9 @@ function ViewCatalog() {
       { label: 'Job', render: r => el('span', { class: 'code' }, r.job) },
       { label: 'Quelle', render: r => r.source_name || el('span', { class: 'faint' }, 'aus dem Terminal') },
       { label: 'Artikel', num: true, render: r => String(r.products || '—') },
+      { label: 'Modell', render: r => r.classifier
+          ? el('span', { class: 'faint', style: 'font-size:var(--fs-xs)' }, r.classifier)
+          : el('span', { class: 'faint' }, '—') },
       { label: 'Stand', render: r => el('div', { class: 'tags' },
           r.has_compare ? Badge('Vergleich', 'accent') : null,
           r.has_enriched ? Badge('Merkmale', 'ok') : null,
@@ -785,6 +837,13 @@ function Topbar() {
         onChange: e => switchJob(e.target.value),
       }, state.jobs.map(x => el('option', { value: x.job, selected: x.job === state.job || null }, x.job)))
         : el('span', { class: 'code' }, state.job || '—'),
+      el('span', { class: 'faint' }, '·'),
+      state.classifier?.label
+        ? el('span', { class: 'topbar__model' },
+            el('span', { class: 'faint' }, 'klassifiziert mit '),
+            el('strong', {}, state.classifier.label),
+            state.classifier.simulated ? Badge('simuliert', 'warn') : null)
+        : el('span', { class: 'faint' }, 'noch nicht klassifiziert'),
       el('span', { class: 'faint' }, '·'),
       el('span', {}, state.config.etim_version),
       el('span', { class: 'faint' }, '·'),

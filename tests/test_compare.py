@@ -85,6 +85,53 @@ def test_compare_run_without_reference(model, tmp_path):
     assert saved["job"] == "cmp" and len(saved["items"]) == 4
 
 
+def test_classifier_choice_drives_the_pipeline(model, tmp_path):
+    """Gemini, Jev oder beide — die Wahl steht am Ergebnis und im Kandidatenfeld."""
+    out = tmp_path / "wahl"
+    ingest.run(FIX / "katalog_mini.csv", out)
+
+    nur_gemini = classify.run(out, model, classifier="gemini")
+    assert {r.model for r in nur_gemini} == {"gemini"}
+    assert all(len(r.candidates) <= 5 for r in nur_gemini)
+    assert not (out / "compare.json").exists(), "ohne 'both' kein Vergleich"
+
+    nur_jev = classify.run(out, model, classifier="jev")
+    assert {r.model for r in nur_jev} == {"jev"}
+    assert all(r.simulated for r in nur_jev), "Trockenlauf muss durchgereicht werden"
+    # Jevs Begründung ist gebaut, nicht erfunden: sie nennt nur Codes aus dem Feld.
+    gewaehlt = [r for r in nur_jev if r.decision.class_id]
+    assert gewaehlt and all(r.decision.class_id in r.decision.reasoning for r in gewaehlt)
+
+    beide = classify.run(out, model, classifier="both")
+    assert (out / "compare.json").exists(), "'both' schreibt den Vergleich"
+    assert {r.model for r in beide} == {"gemini"}, "für den Export zählt Gemini"
+
+    # Die geschriebene Datei traegt die Modellkennung, nicht nur der Rueckgabewert.
+    saved = json.loads((out / "classified.json").read_text())
+    assert saved[0]["model"] == "gemini"
+
+
+def test_unknown_classifier_is_refused(model, tmp_path):
+    out = tmp_path / "falsch"
+    ingest.run(FIX / "katalog_mini.csv", out)
+    with pytest.raises(SystemExit, match="gemini"):
+        classify.run(out, model, classifier="chatgpt")
+
+
+def test_jev_failure_leaves_a_readable_decision(model, tmp_path, monkeypatch):
+    """Faellt Jev aus, steht der Grund am Artikel — und die Klasse bleibt leer."""
+    out = tmp_path / "jevaus"
+    ingest.run(FIX / "katalog_mini.csv", out)
+
+    def boom(*a, **kw):
+        raise jev.JevError("Jev lehnt die Zugangsdaten ab (401).")
+
+    monkeypatch.setattr(jev, "ask", boom)
+    rows = classify.run(out, model, classifier="jev")
+    assert all(r.decision.class_id is None and r.needs_review for r in rows)
+    assert all("401" in r.decision.reasoning for r in rows)
+
+
 def test_reference_skeleton_leaves_the_decision_open(tmp_path):
     """Das Gerüst nimmt das Abtippen ab, nicht die Entscheidung."""
     out = tmp_path / "skel"

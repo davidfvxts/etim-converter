@@ -212,6 +212,7 @@ export function RunProgress(run) {
     el('div', { class: 'run__head' },
       Badge(run.state === 'error' ? 'Fehler' : run.state === 'done' ? 'Fertig' : 'Läuft',
             tone === 'accent' ? 'accent' : tone, { dot: run.state === 'running' }),
+      run.classifier_label ? el('span', { class: 'run__model' }, run.classifier_label) : null,
       el('div', { class: 'run__msg' }, run.message || run.stage_label || ''),
       pct === null ? null : el('span', { class: 'run__count num' }, `${run.done}/${run.total}`),
     ),

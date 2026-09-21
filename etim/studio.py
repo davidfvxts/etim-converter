@@ -29,7 +29,7 @@ from . import config
 ALLOWED = {".pdf": "PDF", ".xlsx": "Excel", ".csv": "CSV"}
 SOURCE_DIR = "source"
 
-# Ablauf eines Vergleichslaufs, wie ihn das Dashboard anzeigt.
+# Ablauf eines Laufs, wie ihn das Dashboard anzeigt.
 STAGES = [
     ("ingest", "Artikel extrahieren"),
     ("retrieval", "Retrieval"),
@@ -37,6 +37,8 @@ STAGES = [
     ("jev", "Jev"),
     ("features", "Merkmale"),
 ]
+
+LABELS = {"gemini": "Gemini", "jev": "Jev", "both": "Gemini und Jev"}
 
 
 class UploadError(ValueError):
@@ -138,6 +140,18 @@ def _count(path: Path) -> int:
     return len(data) if isinstance(data, list) else 0
 
 
+def _classifier_label(job_dir: Path) -> str:
+    """Welches Modell diesen Job klassifiziert hat — fuer die Jobliste."""
+    try:
+        rows = json.loads((job_dir / "classified.json").read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, FileNotFoundError):
+        return ""
+    if not isinstance(rows, list) or not rows:
+        return ""
+    models = sorted({r.get("model", "gemini") for r in rows if isinstance(r, dict)})
+    return " und ".join(LABELS.get(m, m) for m in models)
+
+
 def job_summary(job_dir: Path) -> dict:
     meta_path = job_dir / "job.json"
     meta: dict[str, Any] = {}
@@ -154,6 +168,7 @@ def job_summary(job_dir: Path) -> dict:
         "uploaded": meta.get("uploaded", ""),
         "products": _count(job_dir / "products.json"),
         "has_classified": (job_dir / "classified.json").exists(),
+        "classifier": _classifier_label(job_dir),
         "has_enriched": (job_dir / "enriched.json").exists(),
         "has_compare": (job_dir / "compare.json").exists(),
         "has_reference": (job_dir / "reference.json").exists(),
@@ -175,6 +190,7 @@ def list_jobs(out_root: Path) -> list[dict]:
 class RunState:
     job: str
     kind: str
+    classifier: str = "gemini"      # gemini | jev | both
     state: str = "running"          # running | done | error
     stage: str = ""
     stage_label: str = ""
@@ -189,7 +205,9 @@ class RunState:
 
     def as_dict(self) -> dict:
         return {
-            "job": self.job, "kind": self.kind, "state": self.state,
+            "job": self.job, "kind": self.kind, "classifier": self.classifier,
+            "classifier_label": LABELS.get(self.classifier, self.classifier),
+            "state": self.state,
             "stage": self.stage, "stage_label": self.stage_label,
             "done": self.done, "total": self.total, "message": self.message,
             "error": self.error, "started": self.started, "finished": self.finished,
@@ -215,31 +233,38 @@ def run_state(job: str) -> dict | None:
 
 
 def start(job_dir: Path, *, kind: str = "compare", reuse_gemini: bool = False,
-          with_features: bool = False, pages: tuple[int, int] | None = None) -> dict:
+          with_features: bool = False, pages: tuple[int, int] | None = None,
+          classifier: str | None = None) -> dict:
     """Einen Lauf im Hintergrund starten. Je Job laeuft hoechstens einer."""
     job = job_dir.name
+    classifier = (classifier or config.CLASSIFIER).lower()
+    if classifier not in config.CLASSIFIERS:
+        raise UploadError(f"Unbekanntes Modell '{classifier}'.")
     with _LOCK:
         if active(job):
             raise UploadError(f"Fuer '{job}' laeuft bereits ein Lauf.")
-        stages = ["retrieval", "gemini", "jev"]
+        # Nur die Stufen anzeigen, die auch laufen — sonst wartet man auf Gemini,
+        # obwohl nur Jev gefragt wird.
+        stages = ["retrieval"]
+        stages += ["gemini", "jev"] if classifier == "both" else [classifier]
         if kind == "full":
             stages.insert(0, "ingest")
         if with_features:
             stages.append("features")
-        st = RunState(job=job, kind=kind, stages=stages,
+        st = RunState(job=job, kind=kind, classifier=classifier, stages=stages,
                       started=datetime.now(timezone.utc).isoformat(timespec="seconds"),
                       stage=stages[0], stage_label=STAGE_LABELS[stages[0]],
                       message="Lauf gestartet")
         RUNS[job] = st
 
     t = threading.Thread(target=_worker, name=f"etim-run-{job}", daemon=True,
-                         args=(job_dir, st, kind, reuse_gemini, with_features, pages))
+                         args=(job_dir, st, kind, reuse_gemini, with_features, pages, classifier))
     t.start()
     return st.as_dict()
 
 
 def _worker(job_dir: Path, st: RunState, kind: str, reuse_gemini: bool,
-            with_features: bool, pages: tuple[int, int] | None) -> None:
+            with_features: bool, pages: tuple[int, int] | None, classifier: str) -> None:
     def tick(stage: str, done: int, total: int, message: str) -> None:
         st.stage, st.stage_label = stage, STAGE_LABELS.get(stage, stage)
         st.done, st.total, st.message = done, total, message
@@ -263,13 +288,25 @@ def _worker(job_dir: Path, st: RunState, kind: str, reuse_gemini: bool,
                 raise ValueError("Aus dem Katalog wurde kein Artikel extrahiert — "
                                  "Seitenbereich oder Dateiformat pruefen.")
 
-        from . import compare
         from .model import EtimModel
 
-        comp = compare.run(job_dir, EtimModel(), reuse_gemini=reuse_gemini,
-                           with_features=with_features, progress=tick)
-        st.message = (f"{len(comp.items)} Artikel verglichen — ohne Klasse: "
-                      f"Gemini {comp.metrics['gemini'].no_class}, Jev {comp.metrics['jev'].no_class}")
+        etim_model = EtimModel()
+        if classifier == "both":
+            from . import compare
+
+            comp = compare.run(job_dir, etim_model, reuse_gemini=reuse_gemini,
+                               with_features=with_features, progress=tick)
+            st.message = (f"{len(comp.items)} Artikel verglichen — ohne Klasse: "
+                          f"Gemini {comp.metrics['gemini'].no_class}, Jev {comp.metrics['jev'].no_class}")
+        else:
+            from . import classify
+
+            tick(classifier, 0, 0, f"Klassifizieren mit {LABELS[classifier]}")
+            rows = classify.run(job_dir, etim_model, classifier=classifier)
+            n_none = sum(1 for r in rows if not r.decision.class_id)
+            tick(classifier, len(rows), len(rows), "fertig")
+            st.message = (f"{len(rows)} Artikel mit {LABELS[classifier]} klassifiziert — "
+                          f"{n_none} ohne Klasse, {sum(r.needs_review for r in rows)} zur Prüfung")
         st.log.append(st.message)
         st.state = "done"
     except BaseException as e:  # noqa: BLE001 — der Fehler muss ins Dashboard, nicht ins Nichts
