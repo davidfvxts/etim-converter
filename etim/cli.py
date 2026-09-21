@@ -46,6 +46,9 @@ def main(argv=None):
     s = sub.add_parser("review", help="Review-CSV eines Jobs zusammenfassen")
     s.add_argument("job_dir", type=Path)
 
+    s = sub.add_parser("reference", help="Gerüst für reference.json anlegen (Klassen bleiben leer)")
+    s.add_argument("job_dir", type=Path, help="Ordner unter out/, z. B. out/strawa")
+
     s = sub.add_parser("ui", help="Prüf-Cockpit im Browser öffnen")
     s.add_argument("job_dir", type=Path, help="Ordner unter out/, z. B. out/demo — oder out/ selbst")
     s.add_argument("--port", type=int, default=8000)
@@ -83,6 +86,14 @@ def main(argv=None):
         from .ui import run as run_ui
 
         run_ui(a.out or config.OUT, a.port, not a.no_open)
+        return
+    if a.cmd == "reference":
+        from .compare import reference_skeleton
+
+        try:
+            reference_skeleton(a.job_dir)
+        except (FileExistsError, ValueError, OSError) as e:
+            raise SystemExit(str(e))
         return
     if a.cmd == "review":
         import csv

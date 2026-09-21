@@ -1,4 +1,4 @@
-# etim-jev-proxy
+# etim-converter
 
 Cloudflare Worker, über den die Pipeline Jev (`typesafe/jev`) aufruft.
 
@@ -30,7 +30,7 @@ Danach in der `.env` der App:
 
 ```
 ETIM_JEV_TRANSPORT=worker
-ETIM_JEV_WORKER_URL=https://etim-jev-proxy.<subdomain>.workers.dev/jev
+ETIM_JEV_WORKER_URL=https://etim-converter.<subdomain>.workers.dev/jev
 ETIM_JEV_WORKER_SECRET=<dasselbe Secret>
 ```
 
@@ -38,7 +38,7 @@ Prüfen:
 
 ```bash
 curl -H "Authorization: Bearer $ETIM_JEV_WORKER_SECRET" \
-     https://etim-jev-proxy.<subdomain>.workers.dev/health
+     https://etim-converter.<subdomain>.workers.dev/health
 ```
 
 ## Vertrag

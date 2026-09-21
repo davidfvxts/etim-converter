@@ -112,6 +112,8 @@ python -m etim ui out/demo                 # Prüf-Cockpit im Browser (stdlib-Se
 python -m etim studio                      # Cockpit über allen Jobs: hochladen, Lauf starten
 python -m etim compare --job demo          # Gemini gegen Jev auf derselben Kandidatenliste
 python -m etim compare --job demo --reuse-gemini --features
+python -m etim reference out/demo          # Gerüst für reference.json (Klassen bleiben leer)
+bash scripts/setup_jev.sh                  # Worker deployen, Secret setzen, .env schreiben, prüfen
 python scripts/make_demo_data.py           # Beispieldaten der Oberfläche neu erzeugen
 python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei zum Teilen
 ```
@@ -149,18 +151,21 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
       Job `strawa` zusätzlich `out/strawa/reference.json` anlegen
       (`{"<artikelnr>": "EC004089", ...}`), sonst gibt es bewusst keine Trefferquote.
       **Bis dahin steht im Dashboard kein Jev-Ergebnis, das keines ist.**
-- [ ] **Cloudflare-Worker: gefunden, aber nicht lesbar.** Im Account liegt ein Worker
-      **`etim-converter`** (angelegt 21.9.2026 10:37, also kurz vor dieser Sitzung). Gesucht
-      wurde gründlich: Cloudflare-MCP (`workers_list` findet ihn, `workers_get_worker_code`
-      liefert `null`), `wrangler` nicht installiert und die API ohnehin blockiert, keine
-      `wrangler.toml` im Repo oder auf der Maschine, `~/Projekte` existiert hier nicht.
-      **Was er tut, ist damit offen.** Deshalb ist der neue Worker bewusst
-      **`etim-jev-proxy`** genannt statt `etim-converter` — ein Deployment hätte den
-      bestehenden sonst überschrieben. **Rückfrage an David:** Wenn `etim-converter` ohnehin
-      nur Jev vorschalten soll, `name` in `worker/wrangler.toml` auf `etim-converter` ändern;
-      wenn er etwas anderes tut, bleibt es beim eigenen Worker. Kein offener Proxy: nur
-      `POST /jev` und `GET /health`, beide mit Shared Secret (SHA-256 → `timingSafeEqual`),
-      das Modell steht fest im Quelltext, der Rumpf muss die Form eines System-One-Aufrufs haben.
+- [x] **Cloudflare-Worker geklärt: `etim-converter` ist der richtige** (David, 21.9.2026).
+      `worker/wrangler.toml` heißt jetzt so; ein Deployment ersetzt den bestehenden Worker
+      absichtlich. Sein bisheriger Inhalt war aus dieser Sitzung nicht lesbar
+      (`workers_get_worker_code` liefert `null`, `api.cloudflare.com` ist egress-gesperrt),
+      ist laut David aber genau diese Vorschaltung. Kein offener Proxy: nur `POST /jev` und
+      `GET /health`, beide mit Shared Secret (SHA-256 → `timingSafeEqual`), Modell fest im
+      Quelltext, Rumpf muss die Form eines System-One-Aufrufs haben.
+- [x] **Einrichtung auf einen Befehl eingedampft** (21.9.2026): `bash scripts/setup_jev.sh`
+      macht Anmeldung, Secret, Deploy, `.env` und Funktionstest in einem Durchgang; wiederholbar,
+      Secret wird nie ausgegeben, `.env.bak` als Sicherung. Dazu `python -m etim reference
+      out/<job>`: Gerüst für `reference.json` mit allen Artikelnummern und Bezeichnungen, die
+      **Klassen bleiben absichtlich leer** — mit Modellvorschlägen vorbelegt würde der Vergleich
+      das Modell gegen seine eigene Antwort messen. Getestet in `tests/test_compare.py`.
+      Der `set_key`-Teil des Skripts ist gegen Sonderzeichen im Secret geprüft (`& \ / $`),
+      und `python-dotenv` liest solche Werte nachweislich wörtlich.
 - [x] **Echte ETIM-Daten liegen vor** (14.9.2026). Der Blocker war reine Netz-Policy, nicht der
       Server: `www.etim-international.com` liefert sowohl in der Remote-Umgebung als auch im
       lokalen Geräte-Shell 403 auf CONNECT. Beschafft wurden die beiden nötigen ZIPs deshalb

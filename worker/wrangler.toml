@@ -1,10 +1,8 @@
 # Jev-Vorschaltung fuer die ETIM-Pipeline.
 #
-# Bewusst ein eigener Worker und nicht der bestehende "etim-converter":
-# dessen Quelltext war aus dieser Sitzung nicht lesbar, und ein Deployment
-# haette ihn ueberschrieben. Wenn er ohnehin nur Jev vorschalten soll, kann
-# der Name hier angepasst werden.
-name = "etim-jev-proxy"
+# Name bestaetigt von David (21.9.2026): der bestehende Worker "etim-converter"
+# ist genau dieser hier. Ein Deployment ersetzt ihn also absichtlich.
+name = "etim-converter"
 main = "src/index.ts"
 compatibility_date = "2026-09-01"
 

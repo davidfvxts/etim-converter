@@ -438,6 +438,39 @@ def load_reference(out_dir: Path) -> dict[str, str]:
     return {str(k): str(v) for k, v in data.items() if v}
 
 
+def reference_skeleton(out_dir: Path) -> Path:
+    """Geruest fuer reference.json aus products.json erzeugen.
+
+    Nimmt David das Abtippen der Artikelnummern ab, aber **nicht** die
+    Entscheidung: die Klassenfelder bleiben leer. Es waere verlockend, hier
+    die Modellvorschlaege einzutragen — dann misst man das Modell aber gegen
+    sich selbst, und die Trefferquote waere wertlos. Leere Werte werden von
+    load_reference ignoriert, man kann also stueckweise ausfuellen.
+    """
+    target = out_dir / "reference.json"
+    if target.exists():
+        raise FileExistsError(
+            f"{target} gibt es schon — sie wird nicht ueberschrieben. "
+            "Zum Neuanlegen die Datei vorher umbenennen.")
+    data = json.loads((out_dir / "products.json").read_text(encoding="utf-8"))
+    products = [Product.model_validate(x) for x in data["products"]]
+    if not products:
+        raise ValueError(f"{out_dir}/products.json enthaelt keinen Artikel.")
+
+    target.write_text(json.dumps({
+        "_hinweis": ("Trage je Artikelnummer die richtige ETIM-Klasse ein (EC + 6 Ziffern). "
+                     "Leere Felder werden ignoriert — teilweise ausgefuellt ist erlaubt. "
+                     "Die Klasse selbst nachschlagen, nicht vom Modell uebernehmen: sonst "
+                     "misst der Vergleich das Modell gegen seine eigene Antwort."),
+        "_artikel": {p.supplier_pid: p.name for p in products},
+        "reference": {p.supplier_pid: "" for p in products},
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"reference: {len(products)} Artikel → {target}")
+    print("  Jetzt die Klassen eintragen, dann: python -m etim compare --job "
+          f"{out_dir.name} --reuse-gemini")
+    return target
+
+
 def _retrieve(model: EtimModel, products: list[Product], k: int,
               reference: dict[str, str]) -> tuple[list[list[ClassCandidate]], list[int | None]]:
     """Top-k je Artikel plus den echten Rang der Referenzklasse in der Gesamtliste.

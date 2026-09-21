@@ -85,6 +85,32 @@ def test_compare_run_without_reference(model, tmp_path):
     assert saved["job"] == "cmp" and len(saved["items"]) == 4
 
 
+def test_reference_skeleton_leaves_the_decision_open(tmp_path):
+    """Das Gerüst nimmt das Abtippen ab, nicht die Entscheidung."""
+    out = tmp_path / "skel"
+    products = ingest.run(FIX / "katalog_mini.csv", out)
+
+    target = compare.reference_skeleton(out)
+    data = json.loads(target.read_text())
+
+    pids = [p.supplier_pid for p in products]
+    assert sorted(data["reference"]) == sorted(pids)
+    assert set(data["reference"].values()) == {""}, "keine vorbelegten Klassen"
+    assert data["_artikel"][pids[0]] == products[0].name, "Bezeichnung als Lesehilfe"
+
+    # Ein leeres Gerüst ergibt keine Referenz — und damit keine Trefferquote.
+    assert compare.load_reference(out) == {}
+
+    # Teilweise ausgefüllt: nur die gefüllten Zeilen zählen.
+    data["reference"][pids[0]] = "EC000001"
+    target.write_text(json.dumps(data))
+    assert compare.load_reference(out) == {pids[0]: "EC000001"}
+
+    # Eine bestehende Datei wird nie überschrieben.
+    with pytest.raises(FileExistsError):
+        compare.reference_skeleton(out)
+
+
 def test_compare_run_with_reference(model, tmp_path):
     """Mit Referenz entstehen Trefferquote, Kandidatenfenster und Konfidenzsplit."""
     out = tmp_path / "cmpref"

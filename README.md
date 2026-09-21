@@ -72,12 +72,32 @@ ausgewiesen. Ohne eingerichteten Jev-Zugang wird nichts als Jev-Ergebnis dargest
 
 Wo Jev eingesetzt wird und wo bewusst nicht, steht in `CLAUDE.md`.
 
-### Zugang über Cloudflare
+### Zugang über Cloudflare — einmal einrichten
 
-Die Jev-Aufrufe laufen über den Worker in `worker/` (`typesafe/jev` per Workers-AI-Binding), damit
-die Zugangsdaten als Cloudflare-Secret dort liegen und nicht in der App. Einrichtung und
-Absicherung: `worker/README.md`. Alternativ `ETIM_JEV_TRANSPORT=cloudflare` für den direkten Weg
-über die REST-API.
+```bash
+bash scripts/setup_jev.sh
+```
+
+Das Skript meldet bei Cloudflare an (falls nötig), erzeugt ein Shared Secret, hinterlegt es beim
+Worker, veröffentlicht ihn, trägt Adresse und Secret in die `.env` ein und prüft zum Schluss, ob
+er antwortet. Es ist wiederholbar: ein bereits in der `.env` stehendes Secret wird wiederverwendet,
+und das Secret wird nie ausgegeben. Vor dem Schreiben entsteht `.env.bak`.
+
+Die Jev-Aufrufe laufen dann über den Worker in `worker/` (`typesafe/jev` per Workers-AI-Binding),
+die Zugangsdaten liegen als Cloudflare-Secret dort und nicht in der App. Was der Worker genau tut
+und warum er kein offener Proxy ist: `worker/README.md`. Alternativ `ETIM_JEV_TRANSPORT=cloudflare`
+für den direkten Weg über die REST-API.
+
+### Trefferquote: Referenzklassen festlegen
+
+```bash
+python -m etim reference out/<job>     # Gerüst mit allen Artikelnummern, Klassen leer
+```
+
+Danach in `out/<job>/reference.json` je Artikel die richtige ETIM-Klasse eintragen. Teilweise
+ausgefüllt ist erlaubt — leere Felder zählen nicht mit. Das Gerüst füllt die Klassen bewusst
+**nicht** mit Modellvorschlägen vor: sonst misst der Vergleich das Modell gegen seine eigene
+Antwort. Eine bestehende `reference.json` wird nie überschrieben.
 
 ## Lizenz-Hinweise
 
