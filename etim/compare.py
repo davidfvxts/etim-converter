@@ -187,6 +187,8 @@ def compare_features(model: EtimModel, p: Product, class_id: str,
         return out
     try:
         res = jev.ask("features", product_state(p), questions)
+    except jev.JevUnavailable:
+        raise
     except (jev.JevError, ValueError) as e:
         out.error = str(e)
         out.answers["jev"] = []

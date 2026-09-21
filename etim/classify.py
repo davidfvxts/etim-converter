@@ -220,6 +220,8 @@ def ask_jev(model: EtimModel, p: Product, cands: list[ClassCandidate]) -> ModelA
                 "The article is a complete product in its own right.",
             ),
         })
+    except jev.JevUnavailable:
+        raise  # dauerhafter Ausfall: den ganzen Lauf abbrechen, nicht 250-mal wiederholen
     except (jev.JevError, ValueError) as e:
         answer.error = str(e)
         return answer
@@ -286,6 +288,7 @@ def run(out_dir: Path, model: EtimModel | None = None, *,
     if classifier not in config.CLASSIFIERS:
         raise SystemExit(f"Unbekanntes Modell '{classifier}' — erlaubt: {', '.join(config.CLASSIFIERS)}")
     model = model or EtimModel()
+    jev.reset_failures()
 
     if classifier == "both":
         # Lazy, weil compare seinerseits classify braucht.

@@ -173,6 +173,26 @@ python scripts/build_preview.py            # Oberfläche als einzelne HTML-Datei
       Wahrscheinlichkeitsverteilung gebauter Satz; erfundene EC-Codes kann er nicht
       enthalten, weil nur Optionen aus dem Kandidatenfeld vorkommen.
       Tests: **48 statt 45**, inklusive Jev-Ausfall waehrend eines echten Klassifizierungslaufs.
+- [x] **Drei Fehler aus Davids erstem 250-Artikel-Lauf behoben** (21.9.2026). Jeder Jev-Aufruf
+      schlug mit `URLError` fehl, wurde dreimal mit Backoff wiederholt (~11 s je Artikel) und
+      der Lauf mahlte weiter — bei 250 Artikeln rund 45 Minuten fuer 250 identische Fehler.
+      1. **Der Grund war unsichtbar.** `except URLError` gab nur `type(e).__name__` aus, also
+         "URLError". Der eigentliche Grund steht in `e.reason` und wurde weggeworfen. Jetzt
+         nennt `_why()` ihn im Klartext und haengt bei den drei haeufigen Faellen (TLS, DNS,
+         Verbindung abgelehnt) den naechsten Schritt an.
+      2. **Vermuteter Ausloeser: TLS auf macOS.** Python von python.org bringt dort keinen
+         eigenen Zertifikatsspeicher mit; `urllib` scheitert an der Pruefung, waehrend curl und
+         `google-genai` laufen, weil die ihren eigenen mitbringen (Gemini lief in Davids Lauf
+         ja durch). `_ssl_context()` nimmt jetzt certifi, falls vorhanden; `ETIM_CA_BUNDLE`
+         ueberschreibt das.
+      3. **Kein Abbruch bei Dauerausfall.** Neu `JevUnavailable` und ein Zaehler: nach
+         `ETIM_JEV_MAX_FAILURES` (5) Fehlschlaegen in Folge bricht der Lauf mit Ansage ab
+         statt weiterzulaufen. Ein Erfolg setzt den Zaehler zurueck, ein einzelner Aussetzer
+         vergiftet den Lauf also nicht. Tests: **65 statt 61**.
+      **Offen und wichtig:** es gibt weiterhin kein Checkpointing. Wer einen Lauf abbricht,
+      verliert auch die bereits fertigen Gemini-Antworten, weil `classified.json` und
+      `compare.json` erst am Ende geschrieben werden. Bei 250 Artikeln ist das teuer genug,
+      um es als naechstes anzugehen.
 - [ ] **NICHT GEMESSEN: der echte Lauf fehlt — diese Umgebung kann ihn nicht fahren.** Der Code
       ist vollständig und getestet, aber jede Zahl im Dashboard stammt bisher aus dem Trockenlauf
       und ist als `simuliert` gekennzeichnet. Vier Gründe, alle Umgebung, keiner Code:

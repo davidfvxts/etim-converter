@@ -98,6 +98,46 @@ class JevError(RuntimeError):
     """Fehler eines Jev-Aufrufs, mit einem Satz, der im Dashboard lesbar ist."""
 
 
+class JevUnavailable(JevError):
+    """Jev ist dauerhaft nicht erreichbar — der Lauf soll abbrechen, nicht weiterlaufen.
+
+    Ohne das mahlt ein Lauf ueber 250 Artikel jeden einzelnen dreimal mit Backoff
+    durch (rund 11 s je Artikel) und liefert am Ende 250-mal dieselbe Fehlermeldung.
+    """
+
+
+def _why(e: BaseException) -> str:
+    """Der eigentliche Grund hinter einem URLError — nicht nur die Ausnahmeklasse.
+
+    `URLError` allein sagt nichts. Darunter steckt DNS, TLS oder eine abgelehnte
+    Verbindung, und nur das sagt einem, was zu tun ist.
+    """
+    reason = getattr(e, "reason", None) or e
+    text = f"{type(reason).__name__}: {reason}" if not isinstance(reason, str) else reason
+    low = text.lower()
+    if "certificate" in low or "ssl" in low:
+        # Klassiker auf macOS mit einem Python von python.org: das mitgelieferte
+        # OpenSSL hat keinen Zertifikatsspeicher, bis man ihn einmal anlegt.
+        text += ("  → Zertifikatspruefung fehlgeschlagen. Auf macOS einmalig "
+                 "'/Applications/Python 3.11/Install Certificates.command' ausfuehren, "
+                 "oder in der .env ETIM_CA_BUNDLE auf eine Zertifikatsdatei zeigen lassen.")
+    elif "name or service not known" in low or "nodename nor servname" in low or "getaddrinfo" in low:
+        text += "  → Die Adresse laesst sich nicht aufloesen. ETIM_JEV_WORKER_URL pruefen."
+    elif "connection refused" in low or "timed out" in low:
+        text += "  → Keine Verbindung. Worker deployt? Netz erreichbar?"
+    return text
+
+
+# Serienfehler zaehlen: reisst die Verbindung dauerhaft ab, soll der Lauf stehen
+# bleiben statt jeden Artikel einzeln durchzuprobieren.
+MAX_CONSECUTIVE_FAILURES = int(__import__("os").getenv("ETIM_JEV_MAX_FAILURES", "5"))
+_failures: list[str] = []
+
+
+def reset_failures() -> None:
+    _failures.clear()
+
+
 # ------------------------------------------------------------- Konfigurierung
 
 def configured() -> tuple[bool, str]:
@@ -135,12 +175,36 @@ def status() -> dict:
 _TRANSIENT_STATUS = (429, 500, 502, 503, 504, 529)
 
 
+def _ssl_context():
+    """Zertifikatsspeicher fuer urllib.
+
+    Python aus dem Installer von python.org bringt auf macOS keinen eigenen
+    Zertifikatsspeicher mit — urllib scheitert dann an der TLS-Pruefung, waehrend
+    curl und die Gemini-Bibliothek laufen, weil die ihren eigenen mitbringen.
+    Darum hier certifi bevorzugen, falls vorhanden.
+    """
+    import ssl
+
+    path = __import__("os").getenv("ETIM_CA_BUNDLE", "")
+    if not path:
+        try:
+            import certifi
+
+            path = certifi.where()
+        except ImportError:
+            return None
+    try:
+        return ssl.create_default_context(cafile=path)
+    except OSError:
+        return None
+
+
 def _post(url: str, body: dict, headers: dict[str, str], timeout: int) -> dict:
     req = urllib.request.Request(
         url, data=json.dumps(body).encode("utf-8"), method="POST",
         headers={"Content-Type": "application/json", **headers},
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with urllib.request.urlopen(req, timeout=timeout, context=_ssl_context()) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -198,6 +262,13 @@ def ask(name: str, state: Any, questions: dict[str, dict], retries: int = 4) -> 
         body = {"model": config.JEV_MODEL, "input": payload}
         headers = {"Authorization": f"Bearer {config.CF_API_TOKEN}"}
 
+    if len(_failures) >= MAX_CONSECUTIVE_FAILURES:
+        raise JevUnavailable(
+            f"Jev war {len(_failures)}-mal in Folge nicht erreichbar — Lauf abgebrochen, "
+            f"statt jeden weiteren Artikel einzeln durchzuprobieren.\n"
+            f"Letzter Grund: {_failures[-1]}\n"
+            f"Pruefen mit: make jev-check")
+
     last = ""
     for attempt in range(retries):
         t0 = time.monotonic()
@@ -213,14 +284,16 @@ def ask(name: str, state: Any, questions: dict[str, dict], retries: int = 4) -> 
                 raise JevError(_explain(e.code, detail)) from None
             last = _explain(e.code, "")
         except (urllib.error.URLError, TimeoutError, OSError) as e:
+            _failures.append(_why(e))
             if attempt == retries - 1:
-                raise JevError(f"Jev nicht erreichbar: {type(e).__name__}") from None
-            last = f"Jev nicht erreichbar ({type(e).__name__})"
+                raise JevError(f"Jev nicht erreichbar: {_why(e)}") from None
+            last = f"Jev nicht erreichbar: {_why(e)}"
         else:
             # Workers AI verpackt die Antwort in "result"; der eigene Worker reicht sie direkt durch.
             data = raw.get("result") if isinstance(raw.get("result"), dict) else raw
             if not isinstance(data, dict) or "answers" not in data:
                 raise JevError(f"Jev-Antwort ohne 'answers': {str(raw)[:200]}")
+            _failures.clear()
             return JevResult(
                 answers=data.get("answers") or {},
                 usage=data.get("usage") or {},

@@ -177,3 +177,75 @@ def test_selftest_marks_dry_run_as_simulation(monkeypatch):
     monkeypatch.setattr(config, "DRY_RUN", True)
     res = jev.selftest()
     assert res["ok"] and res["simulated"] is True and res["choice"] == "valve"
+
+
+def test_url_error_names_the_real_reason(live, monkeypatch):
+    """"URLError" allein hilft niemandem — der Grund darunter muss sichtbar sein."""
+    import ssl
+    import urllib.error
+
+    monkeypatch.setattr(config, "JEV_TRANSPORT", "worker")
+    monkeypatch.setattr(config, "JEV_WORKER_URL", "https://w/jev")
+    monkeypatch.setattr(config, "JEV_WORKER_SECRET", "s")
+    jev.reset_failures()
+
+    def cert_fail(*a, **k):
+        raise urllib.error.URLError(
+            ssl.SSLCertVerificationError("[SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer certificate"))
+
+    monkeypatch.setattr(jev, "_post", cert_fail)
+    monkeypatch.setattr(jev.time, "sleep", lambda s: None)
+    with pytest.raises(jev.JevError) as err:
+        jev.ask("classify", STATE, QUESTIONS, retries=1)
+    text = str(err.value)
+    assert "CERTIFICATE_VERIFY_FAILED" in text, "der eigentliche Grund fehlt"
+    assert "Install Certificates" in text, "kein Hinweis, was zu tun ist"
+
+
+def test_dns_failure_points_at_the_url(live, monkeypatch):
+    import urllib.error
+
+    monkeypatch.setattr(config, "JEV_TRANSPORT", "worker")
+    monkeypatch.setattr(config, "JEV_WORKER_URL", "https://w/jev")
+    monkeypatch.setattr(config, "JEV_WORKER_SECRET", "s")
+    jev.reset_failures()
+    monkeypatch.setattr(jev, "_post", lambda *a, **k: (_ for _ in ()).throw(
+        urllib.error.URLError(OSError("[Errno 8] nodename nor servname provided"))))
+    with pytest.raises(jev.JevError, match="ETIM_JEV_WORKER_URL"):
+        jev.ask("classify", STATE, QUESTIONS, retries=1)
+
+
+def test_run_stops_after_a_streak_of_failures(live, monkeypatch):
+    """Ein dauerhafter Ausfall darf nicht 250 Artikel lang einzeln durchprobiert werden."""
+    import urllib.error
+
+    monkeypatch.setattr(config, "JEV_TRANSPORT", "worker")
+    monkeypatch.setattr(config, "JEV_WORKER_URL", "https://w/jev")
+    monkeypatch.setattr(config, "JEV_WORKER_SECRET", "s")
+    monkeypatch.setattr(jev, "MAX_CONSECUTIVE_FAILURES", 3)
+    monkeypatch.setattr(jev.time, "sleep", lambda s: None)
+    monkeypatch.setattr(jev, "_post", lambda *a, **k: (_ for _ in ()).throw(
+        urllib.error.URLError(OSError("connection refused"))))
+    jev.reset_failures()
+
+    for _ in range(3):
+        with pytest.raises(jev.JevError):
+            jev.ask("classify", STATE, QUESTIONS, retries=1)
+
+    # Jetzt ist Schluss: keine weiteren Versuche, sondern ein Abbruch mit Ansage.
+    with pytest.raises(jev.JevUnavailable, match="abgebrochen"):
+        jev.ask("classify", STATE, QUESTIONS, retries=1)
+
+
+def test_a_success_clears_the_streak(live, monkeypatch):
+    """Ein einzelner Aussetzer darf den Lauf nicht dauerhaft vergiften."""
+    monkeypatch.setattr(config, "JEV_TRANSPORT", "worker")
+    monkeypatch.setattr(config, "JEV_WORKER_URL", "https://w/jev")
+    monkeypatch.setattr(config, "JEV_WORKER_SECRET", "s")
+    monkeypatch.setattr(jev, "MAX_CONSECUTIVE_FAILURES", 2)
+    jev.reset_failures()
+    jev._failures.append("einmal danebengegangen")
+
+    monkeypatch.setattr(jev, "_post", lambda *a, **k: dict(CHOICE_ANSWER))
+    jev.ask("classify", STATE, QUESTIONS)
+    assert jev._failures == [], "nach einem Erfolg muss der Zaehler leer sein"
