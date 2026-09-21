@@ -1,4 +1,4 @@
-.PHONY: setup check env env-show test lint eval jev jev-check versions load-model studio compare reference
+.PHONY: setup check env env-show test lint eval jev jev-check etim-folder versions load-model studio compare reference
 
 # Alles laeuft ueber das venv. Auf macOS gibt es kein "python", nur "python3" —
 # der direkte Pfad ins venv erspart sowohl das Aktivieren als auch den Unterschied.
@@ -43,6 +43,14 @@ jev:                        ## Cloudflare-Worker deployen und .env einrichten
 
 jev-check: check            ## Jev-Zugang mit einem echten Mini-Aufruf pruefen
 	$(PY) -m etim jev-check
+
+etim-folder:                ## Ablageordner fuer die ETIM-ZIPs anlegen und oeffnen
+	@mkdir -p data/downloads
+	@echo ""
+	@echo "  ETIM-ZIPs hier ablegen:"
+	@echo "  $(CURDIR)/data/downloads"
+	@echo ""
+	@open data/downloads 2>/dev/null || xdg-open data/downloads 2>/dev/null || true
 
 versions: check             ## Welche ETIM-Versionen liegen vor?
 	$(PY) -m etim versions

@@ -144,8 +144,12 @@ def status(version: str) -> dict:
     if ready:
         missing = ""
     elif not folder:
-        missing = (f"Kein CSV-Release in data/etim/{v}/ — Download von "
-                   f"etim-international.com dort entpacken.")
+        # Absoluter Pfad, weil diese Meldung genau dann gelesen wird, wenn
+        # unklar ist, wo der Ordner ueberhaupt liegt.
+        zip_here = config.DATA / "downloads"
+        missing = (f"Kein CSV-Release fuer ETIM {v}. Das ZIP von etim-international.com "
+                   f"unveraendert nach {zip_here}/ legen, dann: "
+                   f"make load-model ETIM={v}")
     elif not db.exists():
         missing = f"Noch nicht geladen: python -m etim load-model --etim {v}"
     else:
